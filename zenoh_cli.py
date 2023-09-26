@@ -4,6 +4,7 @@ import json
 import time
 import atexit
 import logging
+import pathlib
 import warnings
 import argparse
 from base64 import b64decode, b64encode
@@ -18,9 +19,9 @@ def info(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     info = session.info()
-    print(f"zid: {info.zid()}")
-    print(f"routers: {info.routers_zid()}")
-    print(f"peers: {info.peers_zid()}")
+    logger.info(f"zid: {info.zid()}")
+    logger.info(f"routers: {info.routers_zid()}")
+    logger.info(f"peers: {info.peers_zid()}")
 
 
 def scout(
@@ -151,27 +152,18 @@ def main():
 
     parser.add_argument(
         "--mode",
-        "-m",
-        dest="mode",
         choices=["peer", "client"],
         default="peer",
         type=str,
-        help="The zenoh session mode.",
     )
     parser.add_argument(
         "--connect",
-        "-e",
-        dest="connect",
-        metavar="ENDPOINT",
         action="append",
         type=str,
         help="Endpoints to connect to.",
     )
     parser.add_argument(
         "--listen",
-        "-l",
-        dest="listen",
-        metavar="ENDPOINT",
         action="append",
         type=str,
         help="Endpoints to listen on.",
@@ -179,11 +171,8 @@ def main():
 
     parser.add_argument(
         "--config",
-        "-c",
-        dest="config",
-        metavar="FILE",
-        type=str,
-        help="A configuration file.",
+        type=pathlib.Path,
+        help="A path to a configuration file.",
     )
     parser.add_argument("--log-level", type=int, default=logging.INFO)
 
@@ -245,7 +234,7 @@ def main():
 
     # Put together zenoh session configuration
     conf = (
-        zenoh.Config.from_file(args.config)
+        zenoh.Config.from_file(str(args.config))
         if args.config is not None
         else zenoh.Config()
     )
