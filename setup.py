@@ -23,7 +23,7 @@ setup(
     author_email="fredrik.x.olsson@ri.se",
     maintainer="Fredrik Olsson",
     maintainer_email="fredrik.x.olsson@ri.se",
-    py_modules=["mqtt_cli"],
+    py_modules=["zenoh_cli"],
     entry_points={
         "console_scripts": [
             "zenoh=zenoh_cli:main",
