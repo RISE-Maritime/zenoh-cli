@@ -13,7 +13,7 @@ def read(fname):
 
 setup(
     name="zenoh-cli",
-    version="0.1.1",
+    version="0.2.0",
     license="Apache License 2.0",
     description="CLI for Zenoh",
     long_description=read("README.md"),
