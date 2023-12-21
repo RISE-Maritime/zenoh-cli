@@ -30,5 +30,5 @@ setup(
         ],
     },
     python_requires=">=3.8",
-    install_requires=["eclipse-zenoh==0.10.0-rc", "parse"],
+    install_requires=["eclipse-zenoh==0.10.1rc0", "parse"],
 )
