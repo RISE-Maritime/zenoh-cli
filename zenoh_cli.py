@@ -148,6 +148,7 @@ def subscribe(
 def network(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
+
     graph = nx.Graph()
 
     for response in session.get("@/router/*", zenoh.Queue()):
@@ -156,11 +157,11 @@ def network(
             data = json.loads(reply.payload)
 
             # Start adding edges and nodes
-            zid = data["zid"][:5]
-            for session in data["sessions"]:
-                peer = session["peer"][:5]
-                whatami = session["whatami"]
-                link_protocols = ",".join([link.split("/")[0] for link in session["links"]])
+            zid = data["zid"]
+            for sess in data["sessions"]:
+                peer = sess["peer"]
+                whatami = sess["whatami"]
+                link_protocols = ",".join([link.split("/")[0] for link in sess["links"]])
                 graph.add_node(peer, whatami=whatami)
                 graph.add_edge(zid, peer, protocol=link_protocols)
             
@@ -170,6 +171,7 @@ def network(
                 reply.err.payload.decode(),
                 args.selector,
             )
+
 
     pos = nx.spring_layout(graph)
     nx.draw_networkx(graph, pos, labels=nx.get_node_attributes(graph, "whatami"))
