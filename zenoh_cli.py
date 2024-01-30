@@ -1,4 +1,5 @@
 """Main entrypoint for this application"""
+
 import sys
 import json
 import time
@@ -161,10 +162,12 @@ def network(
             for sess in data["sessions"]:
                 peer = sess["peer"]
                 whatami = sess["whatami"]
-                link_protocols = ",".join([link.split("/")[0] for link in sess["links"]])
+                link_protocols = ",".join(
+                    [link.split("/")[0] for link in sess["links"]]
+                )
                 graph.add_node(peer, whatami=whatami)
                 graph.add_edge(zid, peer, protocol=link_protocols)
-            
+
         except Exception:
             logger.error(
                 "Received error (%s) on get(%s)",
@@ -172,12 +175,14 @@ def network(
                 args.selector,
             )
 
-
     pos = nx.spring_layout(graph)
     nx.draw_networkx(graph, pos, labels=nx.get_node_attributes(graph, "whatami"))
-    nx.draw_networkx_edge_labels(graph, pos, edge_labels=nx.get_edge_attributes(graph, "protocol"), rotate=False)
+    nx.draw_networkx_edge_labels(
+        graph, pos, edge_labels=nx.get_edge_attributes(graph, "protocol"), rotate=False
+    )
 
     import matplotlib.pyplot as plt
+
     plt.show()
 
 
