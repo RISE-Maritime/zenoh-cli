@@ -1,4 +1,5 @@
 """Main entrypoint for this application"""
+
 import sys
 import json
 import time
@@ -9,8 +10,9 @@ import warnings
 import argparse
 from base64 import b64decode, b64encode
 
-from parse import compile
 import zenoh
+import networkx as nx
+from parse import compile
 
 logger = logging.getLogger("zenoh-cli")
 
@@ -85,7 +87,7 @@ def put(
 
 
 def _print_sample_to_stdout(
-    sample: zenoh.Sample, fmt: str, base64: bool = False, json: bool = False
+    sample: zenoh.Sample, fmt: str, base64: bool = False, is_json: bool = False
 ):
     if base64:
         try:
@@ -102,7 +104,7 @@ def _print_sample_to_stdout(
         logger.exception(f"Could not decode payload: {payload}")
         return
 
-    if json:
+    if is_json:
         try:
             payload = json.dumps(json.loads(payload))
         except json.JSONDecodeError:
@@ -117,9 +119,10 @@ def get(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     for response in session.get(args.selector, zenoh.Queue()):
-        if reply := response.ok:
+        try:
+            reply = response.ok
             _print_sample_to_stdout(reply, args.line, args.base64, args.json)
-        else:
+        except Exception:
             logger.error(
                 "Received error (%s) on get(%s)",
                 reply.err.payload.decode(),
@@ -141,6 +144,46 @@ def subscribe(
             time.sleep(0.1)
         except KeyboardInterrupt:
             sys.exit(0)
+
+
+def network(
+    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+):
+
+    graph = nx.Graph()
+
+    for response in session.get("@/router/*", zenoh.Queue()):
+        try:
+            reply = response.ok
+            data = json.loads(reply.payload)
+
+            # Start adding edges and nodes
+            zid = data["zid"]
+            for sess in data["sessions"]:
+                peer = sess["peer"]
+                whatami = sess["whatami"]
+                link_protocols = ",".join(
+                    [link.split("/")[0] for link in sess["links"]]
+                )
+                graph.add_node(peer, whatami=whatami)
+                graph.add_edge(zid, peer, protocol=link_protocols)
+
+        except Exception:
+            logger.error(
+                "Received error (%s) on get(%s)",
+                reply.err.payload.decode(),
+                args.selector,
+            )
+
+    pos = nx.spring_layout(graph)
+    nx.draw_networkx(graph, pos, labels=nx.get_node_attributes(graph, "whatami"))
+    nx.draw_networkx_edge_labels(
+        graph, pos, edge_labels=nx.get_edge_attributes(graph, "protocol"), rotate=False
+    )
+
+    import matplotlib.pyplot as plt
+
+    plt.show()
 
 
 def main():
@@ -182,6 +225,10 @@ def main():
     ## Info subcommand
     info_parser = subparsers.add_parser("info")
     info_parser.set_defaults(func=info)
+
+    ## Graph subcommand
+    network_parser = subparsers.add_parser("network")
+    network_parser.set_defaults(func=network)
 
     ## Scout subcommand
     scout_parser = subparsers.add_parser("scout")
