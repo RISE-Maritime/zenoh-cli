@@ -11,9 +11,14 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 
+# Parse the requirements-txt file and use for install_requires in pip
+with open("requirements.txt") as f:
+    required = f.read().splitlines()
+
+
 setup(
     name="zenoh-cli",
-    version="0.2.1",
+    version="0.3.0",
     license="Apache License 2.0",
     description="CLI for Zenoh",
     long_description=read("README.md"),
@@ -30,5 +35,5 @@ setup(
         ],
     },
     python_requires=">=3.8",
-    install_requires=["eclipse-zenoh==0.10.1-rc", "parse", "networkx", "matplotlib"],
+    install_requires=required,
 )
