@@ -1,9 +1,19 @@
 # zenoh-cli
 A command line tool for publishing, subscribing and getting from a Zenoh session
 
-Use cases:
-* Trials
+Typical use cases include:
+* Tests
+* Investigations
+* Probing
 * As part of a bash pipeline
+
+`zenoh-cli` makes use of `codecs` for encoding and decoding to and from the wire payloads on the zenoh network bus. By default, `zenoh-cli` bundles the following codecs:
+
+* text
+* base64
+* JSON
+
+A plugin system is in place to allow for easily extending the available codecs in `zenoh-cli`, see below.
 
 ## Installation
 `pip install zenoh-cli`

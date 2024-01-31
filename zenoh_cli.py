@@ -12,8 +12,9 @@ from base64 import b64decode, b64encode
 from typing import Dict, Callable
 
 import zenoh
+import parse
 import networkx as nx
-from parse import compile
+
 
 logger = logging.getLogger("zenoh-cli")
 
@@ -62,7 +63,7 @@ def put(
     encoder = ENCODERS[args.encoder]
 
     if pattern := args.line:
-        line_parser = compile(pattern)
+        line_parser = parse.compile(pattern)
 
         for line in sys.stdin:
             if result := line_parser.parse(line):
@@ -177,11 +178,15 @@ def network(
     plt.show()
 
 
-def encode_default(key: str, value: str) -> bytes:
+## Bundled codecs
+
+
+### Text codec
+def encode_from_text(key: str, value: str) -> bytes:
     return value.encode()
 
 
-def decode_default(key: str, value: bytes) -> str:
+def decode_to_text(key: str, value: bytes) -> str:
     try:
         return value.decode()
     except UnicodeDecodeError:
@@ -189,6 +194,7 @@ def decode_default(key: str, value: bytes) -> str:
         raise
 
 
+### Base64 codec
 def encode_from_base64(key: str, value: str) -> bytes:
     return b64decode(value.encode())
 
@@ -201,8 +207,9 @@ def decode_to_base64(key: str, value: bytes) -> str:
         raise
 
 
+### JSON codec
 def encode_from_json(key: str, value: str) -> bytes:
-    return encode_default(key, value)
+    return encode_from_text(key, value)
 
 
 def decode_to_json(key: str, value: bytes) -> str:
@@ -215,18 +222,19 @@ def decode_to_json(key: str, value: bytes) -> str:
 
 
 ENCODERS: Dict[str, Callable] = {
-    "default": encode_default,
+    "text": encode_from_text,
     "base64": encode_from_base64,
     "json": encode_from_json,
 }
 
 DECODERS: Dict[str, Callable] = {
-    "default": decode_default,
+    "text": decode_to_text,
     "base64": decode_to_base64,
     "json": decode_to_json,
 }
 
 
+## Plugin handling
 def gather_plugins():
     try:
         from importlib.metadata import entry_points
@@ -265,6 +273,7 @@ def load_plugins(plugin_encoders, plugin_decoders):
             logger.exception("Failed to load decoder plugin with name: %s", name)
 
 
+## Entrypoint
 def main():
     plugin_encoders, plugin_decoders = gather_plugins()
 
@@ -327,12 +336,12 @@ def main():
     common_parser.add_argument(
         "--encoder",
         choices=list(ENCODERS.keys()) + list(plugin_encoders.keys()),
-        default="default",
+        default="text",
     )
     common_parser.add_argument(
         "--decoder",
         choices=list(DECODERS.keys()) + list(plugin_decoders.keys()),
-        default="default",
+        default="text",
     )
 
     ## Put subcommand
