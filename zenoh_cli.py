@@ -72,6 +72,7 @@ def put(
                 try:
                     value = encoder(key, value)
                 except Exception:
+                    logger.exception("Encoder (%s) failed, skipping!", args.encoder)
                     continue
 
                 session.put(
@@ -102,6 +103,7 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
     try:
         value = DECODERS[decoder](key, payload)
     except Exception:
+        logger.exception("Decoder (%s) failed, skipping!", decoder)
         return
 
     sys.stdout.write(f"{fmt.format(key=key, value=value)}\n")
@@ -341,7 +343,7 @@ def main():
     common_parser.add_argument(
         "--decoder",
         choices=list(DECODERS.keys()) + list(plugin_decoders.keys()),
-        default="text",
+        default="base64",
     )
 
     ## Put subcommand
