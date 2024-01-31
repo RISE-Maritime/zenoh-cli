@@ -9,10 +9,12 @@ import pathlib
 import warnings
 import argparse
 from base64 import b64decode, b64encode
+from typing import Dict, Callable
 
 import zenoh
+import parse
 import networkx as nx
-from parse import compile
+
 
 logger = logging.getLogger("zenoh-cli")
 
@@ -30,8 +32,8 @@ def scout(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     result = zenoh.scout(what=args.what, timeout=args.timeout)
-    for hello in result.receiver():
-        logger.info(hello)
+    for received in result.receiver():
+        logger.info(received)
 
 
 def delete(
@@ -50,24 +52,31 @@ def put(
             parser.error(
                 "A key must be specified either on the command line or as a pattern parameter."
             )
-        elif "message" not in pattern and not args.message:
+        elif "value" not in pattern and not args.value:
             parser.error(
-                "A message must be specified either on the command line or as a pattern parameter."
+                "A value must be specified either on the command line or as a pattern parameter."
             )
     else:
-        if not args.key or not args.message:
-            parser.error("A topic and a message must be specified on the command line.")
+        if not args.key or not args.value:
+            parser.error("A topic and a value must be specified on the command line.")
+
+    encoder = ENCODERS[args.encoder]
 
     if pattern := args.line:
-        parser = compile(pattern)
+        line_parser = parse.compile(pattern)
 
         for line in sys.stdin:
-            if result := parser.parse(line):
+            if result := line_parser.parse(line):
                 key = args.key or result["key"]
-                message = args.message or result["message"]
+                value = args.value or result["value"]
+                try:
+                    value = encoder(key, value)
+                except Exception:
+                    continue
+
                 session.put(
                     keyexpr=key,
-                    value=b64decode(message) if args.base64 else message,
+                    value=value,
                     # encoding=args.encoding,
                     # priority=args.priority,
                     # congestion_control=args.congestion_control,
@@ -79,39 +88,23 @@ def put(
     else:
         session.put(
             keyexpr=args.key,
-            value=b64decode(args.message) if args.base64 else args.message,
+            value=encoder(args.key, args.value),
             # encoding=args.encoding,
             # priority=args.priority,
             # congestion_control=args.congestion_control,
         )
 
 
-def _print_sample_to_stdout(
-    sample: zenoh.Sample, fmt: str, base64: bool = False, is_json: bool = False
-):
-    if base64:
-        try:
-            payload = b64encode(sample.value.payload)
-        except TypeError:
-            logger.exception(f"Could not b64encode payload: {sample.value.payload}")
-            return
-    else:
-        payload = sample.value.payload
+def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
+    key = sample.key_expr
+    payload = sample.value.payload
 
     try:
-        payload = payload.decode()
-    except UnicodeDecodeError:
-        logger.exception(f"Could not decode payload: {payload}")
+        value = DECODERS[decoder](key, payload)
+    except Exception:
         return
 
-    if is_json:
-        try:
-            payload = json.dumps(json.loads(payload))
-        except json.JSONDecodeError:
-            logger.exception(f"Could not decode payload as JSON: {payload}")
-            return
-
-    sys.stdout.write(f"{fmt.format(key=sample.key_expr, message=payload)}\n")
+    sys.stdout.write(f"{fmt.format(key=key, value=value)}\n")
     sys.stdout.flush()
 
 
@@ -121,7 +114,7 @@ def get(
     for response in session.get(args.selector, zenoh.Queue()):
         try:
             reply = response.ok
-            _print_sample_to_stdout(reply, args.line, args.base64, args.json)
+            _print_sample_to_stdout(reply, args.line, args.decoder)
         except Exception:
             logger.error(
                 "Received error (%s) on get(%s)",
@@ -134,8 +127,8 @@ def subscribe(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     def listener(sample: zenoh.Sample):
-        """Print received message to stdout according to specified format"""
-        _print_sample_to_stdout(sample, args.line, args.base64, args.json)
+        """Print received samples to stdout according to specified format"""
+        _print_sample_to_stdout(sample, args.line, args.decoder)
 
     subscribers = [session.declare_subscriber(key, listener) for key in args.key]
 
@@ -149,7 +142,6 @@ def subscribe(
 def network(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
-
     graph = nx.Graph()
 
     for response in session.get("@/router/*", zenoh.Queue()):
@@ -186,7 +178,105 @@ def network(
     plt.show()
 
 
+## Bundled codecs
+
+
+### Text codec
+def encode_from_text(key: str, value: str) -> bytes:
+    return value.encode()
+
+
+def decode_to_text(key: str, value: bytes) -> str:
+    try:
+        return value.decode()
+    except UnicodeDecodeError:
+        logger.exception(f"Could not decode value: {value}")
+        raise
+
+
+### Base64 codec
+def encode_from_base64(key: str, value: str) -> bytes:
+    return b64decode(value.encode())
+
+
+def decode_to_base64(key: str, value: bytes) -> str:
+    try:
+        return b64encode(value).decode()
+    except TypeError:
+        logger.exception(f"Could not b64encode value: {value}")
+        raise
+
+
+### JSON codec
+def encode_from_json(key: str, value: str) -> bytes:
+    return encode_from_text(key, value)
+
+
+def decode_to_json(key: str, value: bytes) -> str:
+    # Makes sure the json is on a single line
+    try:
+        return json.dumps(json.loads(value))
+    except json.JSONDecodeError:
+        logger.exception(f"Could not JSON decode value: {value}")
+        raise
+
+
+ENCODERS: Dict[str, Callable] = {
+    "text": encode_from_text,
+    "base64": encode_from_base64,
+    "json": encode_from_json,
+}
+
+DECODERS: Dict[str, Callable] = {
+    "text": decode_to_text,
+    "base64": decode_to_base64,
+    "json": decode_to_json,
+}
+
+
+## Plugin handling
+def gather_plugins():
+    try:
+        from importlib.metadata import entry_points
+    except Exception as exc:
+        logger.debug(
+            "Falling back to importlib_metadata backport for python versions lower than 3.10"
+        )
+        from importlib_metadata import entry_points
+
+    encoder_plugins = entry_points(group="zenoh-cli.codecs.encoders")
+    decoder_plugins = entry_points(group="zenoh-cli.codecs.decoders")
+
+    plugin_encoders = {}
+    plugin_decoders = {}
+
+    for plugin in encoder_plugins:
+        plugin_encoders[plugin.name] = plugin
+
+    for plugin in decoder_plugins:
+        plugin_decoders[plugin.name] = plugin
+
+    return plugin_encoders, plugin_decoders
+
+
+def load_plugins(plugin_encoders, plugin_decoders):
+    for name, plugin in plugin_encoders.items():
+        try:
+            ENCODERS[name] = plugin.load()
+        except Exception:
+            logger.exception("Failed to load encoder plugin with name: %s", name)
+
+    for name, plugin in plugin_decoders.items():
+        try:
+            DECODERS[name] = plugin.load()
+        except Exception:
+            logger.exception("Failed to load decoder plugin with name: %s", name)
+
+
+## Entrypoint
 def main():
+    plugin_encoders, plugin_decoders = gather_plugins()
+
     parser = argparse.ArgumentParser(
         prog="zenoh",
         description="Zenoh command-line client application",
@@ -243,12 +333,21 @@ def main():
 
     ## Common parser for all subcommands
     common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument("--base64", action="store_true", default=False)
+    common_parser.add_argument(
+        "--encoder",
+        choices=list(ENCODERS.keys()) + list(plugin_encoders.keys()),
+        default="text",
+    )
+    common_parser.add_argument(
+        "--decoder",
+        choices=list(DECODERS.keys()) + list(plugin_decoders.keys()),
+        default="text",
+    )
 
     ## Put subcommand
     put_parser = subparsers.add_parser("put", parents=[common_parser])
     put_parser.add_argument("-k", "--key", type=str, default=None)
-    put_parser.add_argument("-m", "--message", type=str, default=None)
+    put_parser.add_argument("-v", "--value", type=str, default=None)
     put_parser.add_argument("--line", type=str, default=None)
     put_parser.set_defaults(func=put)
 
@@ -257,15 +356,13 @@ def main():
     subscribe_parser.add_argument(
         "-k", "--key", type=str, action="append", required=True
     )
-    subscribe_parser.add_argument("--line", type=str, default="{message}")
-    subscribe_parser.add_argument("--json", action="store_true", default=False)
+    subscribe_parser.add_argument("--line", type=str, default="{value}")
     subscribe_parser.set_defaults(func=subscribe)
 
     ## Get subcommand
     get_parser = subparsers.add_parser("get", parents=[common_parser])
     get_parser.add_argument("-s", "--selector", type=str, required=True)
-    get_parser.add_argument("--line", type=str, default="{message}")
-    get_parser.add_argument("--json", action="store_true", default=False)
+    get_parser.add_argument("--line", type=str, default="{value}")
     get_parser.set_defaults(func=get)
 
     ## Parse arguments and start doing our thing
@@ -278,6 +375,9 @@ def main():
     logging.captureWarnings(True)
     warnings.filterwarnings("once")
     zenoh.init_logger()
+
+    # Load the plugins
+    load_plugins(plugin_encoders, plugin_decoders)
 
     # Put together zenoh session configuration
     conf = (

@@ -1,0 +1,5 @@
+eclipse-zenoh==0.10.1-rc
+parse
+networkx
+matplotlib
+importlib_metadata; python_version < '3.10'
