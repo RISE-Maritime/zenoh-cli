@@ -189,11 +189,7 @@ def encode_from_text(key: str, value: str) -> bytes:
 
 
 def decode_to_text(key: str, value: bytes) -> str:
-    try:
-        return value.decode()
-    except UnicodeDecodeError:
-        logger.exception(f"Could not decode value: {value}")
-        raise
+    return value.decode()
 
 
 ### Base64 codec
@@ -202,11 +198,7 @@ def encode_from_base64(key: str, value: str) -> bytes:
 
 
 def decode_to_base64(key: str, value: bytes) -> str:
-    try:
-        return b64encode(value).decode()
-    except TypeError:
-        logger.exception(f"Could not b64encode value: {value}")
-        raise
+    return b64encode(value).decode()
 
 
 ### JSON codec
@@ -216,11 +208,7 @@ def encode_from_json(key: str, value: str) -> bytes:
 
 def decode_to_json(key: str, value: bytes) -> str:
     # Makes sure the json is on a single line
-    try:
-        return json.dumps(json.loads(value))
-    except json.JSONDecodeError:
-        logger.exception(f"Could not JSON decode value: {value}")
-        raise
+    return json.dumps(json.loads(value))
 
 
 ENCODERS: Dict[str, Callable] = {
