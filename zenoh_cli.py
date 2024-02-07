@@ -114,10 +114,10 @@ def get(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     for response in session.get(args.selector, zenoh.Queue()):
-        try:
+        if response.is_ok:
             reply = response.ok
             _print_sample_to_stdout(reply, args.line, args.decoder)
-        except Exception:
+        else:
             logger.error(
                 "Received error (%s) on get(%s)",
                 reply.err.payload.decode(),
@@ -147,7 +147,7 @@ def network(
     graph = nx.Graph()
 
     for response in session.get("@/router/*", zenoh.Queue()):
-        try:
+        if response.is_ok:
             reply = response.ok
             data = json.loads(reply.payload)
 
@@ -162,7 +162,7 @@ def network(
                 graph.add_node(peer, whatami=whatami)
                 graph.add_edge(zid, peer, protocol=link_protocols)
 
-        except Exception:
+        else:
             logger.error(
                 "Received error (%s) on get(%s)",
                 reply.err.payload.decode(),
