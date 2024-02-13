@@ -36,6 +36,10 @@ options:
   --log-level LOG_LEVEL
 ```
 
+## Example output of `zenoh network`
+
+![network-example.svg](network-example.svg)
+
 ## Extending with codecs for encoding/decoding values
 
 `zenoh-cli` comes with a plugin system for easily extending it with custom encoders and decoders (codecs) for the data values. The plugin system makes use of the entrypoints provided by setuptools, see [here](https://setuptools.pypa.io/en/latest/userguide/entry_point.html) for details. `zenoh-cli` gather plugins from two custom "groups":
