@@ -153,6 +153,8 @@ def network(
 
             # Start adding edges and nodes
             zid = data["zid"]
+            metadata = data["metadata"]
+            graph.add_node(zid, whatami="router", metadata=metadata)
             for sess in data["sessions"]:
                 peer = sess["peer"]
                 whatami = sess["whatami"]
@@ -169,14 +171,54 @@ def network(
                 args.selector,
             )
 
-    pos = nx.spring_layout(graph)
-    nx.draw_networkx(graph, pos, labels=nx.get_node_attributes(graph, "whatami"))
+    pos = nx.spring_layout(graph, seed=3113794652)
+
+    # Nodes
+    routers = [
+        node for node, attrs in graph.nodes.items() if attrs["whatami"] == "router"
+    ]
+    peers = [node for node, attrs in graph.nodes.items() if attrs["whatami"] == "peer"]
+    clients = [
+        node for node, attrs in graph.nodes.items() if attrs["whatami"] == "client"
+    ]
+
+    me = str(session.info().zid())
+
+    nx.draw_networkx(
+        graph, pos, nodelist=routers, node_color="#1f77b4", with_labels=False
+    )
+    nx.draw_networkx(
+        graph, pos, nodelist=peers, node_color="#ff7f0e", with_labels=False
+    )
+    nx.draw_networkx(
+        graph, pos, nodelist=clients, node_color="#17becf", with_labels=False
+    )
+    nx.draw_networkx(graph, pos, nodelist=[me], node_color="#d62728", with_labels=False)
+
+    # Edges
     nx.draw_networkx_edge_labels(
         graph, pos, edge_labels=nx.get_edge_attributes(graph, "protocol"), rotate=False
     )
 
+    # Rendering of legend
     import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
 
+    orange_legend_entry = mpatches.Patch(color="#1f77b4", label="Routers")
+    blue_legend_entry = mpatches.Patch(color="#ff7f0e", label="Peers")
+    white_legend_entry = mpatches.Patch(color="#17becf", label="Clients")
+    red_legend_entry = mpatches.Patch(color="#d62728", label="Me")
+    plt.legend(
+        handles=[
+            orange_legend_entry,
+            blue_legend_entry,
+            white_legend_entry,
+            red_legend_entry,
+        ]
+    )
+
+    plt.tight_layout()
+    plt.axis("off")
     plt.show()
 
 
