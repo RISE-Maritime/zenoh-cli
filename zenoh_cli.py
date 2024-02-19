@@ -268,9 +268,11 @@ DECODERS: Dict[str, Callable] = {
 
 ## Plugin handling
 def gather_plugins():
-    try:
+    # NOTE: Python 3.8.x-3.9.x doesn't support the `group` keyword argument in
+    # entry_points, in that case we fallback to `importlib_metadata`.
+    if sys.version_info.minor >= 10:
         from importlib.metadata import entry_points
-    except Exception as exc:
+    else:
         logger.debug(
             "Falling back to importlib_metadata backport for python versions lower than 3.10"
         )
