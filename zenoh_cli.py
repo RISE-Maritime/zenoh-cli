@@ -113,10 +113,10 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
 def get(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
-    for response in session.get(args.selector, zenoh.Queue()):
-        if response.is_ok:
-            reply = response.ok
-            _print_sample_to_stdout(reply, args.line, args.decoder)
+    for reply in session.get(args.selector, zenoh.Queue(), value=args.value):
+        if reply.is_ok:
+            response = reply.ok
+            _print_sample_to_stdout(response, args.line, args.decoder)
         else:
             logger.error(
                 "Received error (%s) on get(%s)",
@@ -394,6 +394,7 @@ def main():
     ## Get subcommand
     get_parser = subparsers.add_parser("get", parents=[common_parser])
     get_parser.add_argument("-s", "--selector", type=str, required=True)
+    get_parser.add_argument("-v", "--value", type=str, default=None)
     get_parser.add_argument("--line", type=str, default="{value}")
     get_parser.set_defaults(func=get)
 
