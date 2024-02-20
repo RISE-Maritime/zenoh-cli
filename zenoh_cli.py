@@ -146,6 +146,11 @@ def network(
 ):
     graph = nx.Graph()
 
+    # Scout the nearby network
+    for answer in zenoh.scout(what="peer|client", timeout=1.0).receiver():
+        graph.add_node(str(answer.zid), whatami=str(answer.whatami))
+
+    # Query routers for more information
     for response in session.get("@/router/*", zenoh.Queue()):
         if response.is_ok:
             reply = response.ok
