@@ -190,7 +190,12 @@ def network(
     me = str(session.info().zid())
 
     nx.draw_networkx(
-        graph, pos, nodelist=routers, node_color="#1f77b4", with_labels=False
+        graph,
+        pos,
+        nodelist=routers,
+        node_color="#1f77b4",
+        node_size=500,
+        with_labels=False,
     )
     nx.draw_networkx(
         graph, pos, nodelist=peers, node_color="#ff7f0e", with_labels=False
@@ -199,6 +204,10 @@ def network(
         graph, pos, nodelist=clients, node_color="#17becf", with_labels=False
     )
     nx.draw_networkx(graph, pos, nodelist=[me], node_color="#d62728", with_labels=False)
+
+    # Node labels
+    labels = {zid: zid[:5] for zid in nx.nodes(graph)}
+    nx.draw_networkx_labels(graph, pos, labels, font_color="y")
 
     # Edges
     nx.draw_networkx_edge_labels(
@@ -283,8 +292,8 @@ def gather_plugins():
         )
         from importlib_metadata import entry_points
 
-    encoder_plugins = entry_points(group="zenoh-cli.codecs.encoders")
-    decoder_plugins = entry_points(group="zenoh-cli.codecs.decoders")
+    encoder_plugins = entry_points(group="zenoh_cli.codecs.encoders")
+    decoder_plugins = entry_points(group="zenoh_cli.codecs.decoders")
 
     plugin_encoders = {}
     plugin_decoders = {}
@@ -355,7 +364,7 @@ def main():
     info_parser = subparsers.add_parser("info")
     info_parser.set_defaults(func=info)
 
-    ## Graph subcommand
+    ## Network subcommand
     network_parser = subparsers.add_parser("network")
     network_parser.set_defaults(func=network)
 
