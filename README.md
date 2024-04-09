@@ -44,7 +44,7 @@ options:
 
 `zenoh-cli` comes with a plugin system for easily extending it with custom encoders and decoders (codecs) for the data values. The plugin system makes use of the entrypoints provided by setuptools, see [here](https://setuptools.pypa.io/en/latest/userguide/entry_point.html) for details. `zenoh-cli` gather plugins from two custom "groups":
 
-* `zenoh-cli.codecs.encoders`
-* `zenoh-cli.codecs.decoders`
+* `zenoh_cli.codecs.encoders`
+* `zenoh_cli.codecs.decoders`
 
 For an example, see [example_plugin](./example_plugin/)
