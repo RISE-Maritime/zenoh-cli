@@ -170,11 +170,12 @@ def network(
                 graph.add_edge(zid, peer, protocol=link_protocols)
 
         else:
-            logger.error(
-                "Received error (%s) on get(%s)",
-                reply.err.payload.decode(),
-                args.selector,
-            )
+            # logger.error(
+            #     "Received error (%s) on get(%s)",
+            #     reply.err.payload.decode(),
+            #     args.selector,
+            # )
+            pass
 
     pos = nx.spring_layout(graph, seed=3113794652)
 
@@ -206,8 +207,14 @@ def network(
     nx.draw_networkx(graph, pos, nodelist=[me], node_color="#d62728", with_labels=False)
 
     # Node labels
-    labels = {zid: zid[:5] for zid in nx.nodes(graph)}
-    nx.draw_networkx_labels(graph, pos, labels, font_color="y")
+    labels = {}
+    for zid, attributes in graph.nodes(data=True):
+        # Try to find a name metadata attribute otherwise use zid
+        metadata = attributes.get("metadata", {})
+        name = (metadata or {}).get("name", zid[:5])
+        labels[zid] = name
+
+    nx.draw_networkx_labels(graph, pos, labels, font_color="silver", font_weight="bold")
 
     # Edges
     nx.draw_networkx_edge_labels(
