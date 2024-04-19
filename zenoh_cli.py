@@ -113,14 +113,13 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
 def get(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
-    for reply in session.get(args.selector, zenoh.Queue(), value=args.value):
-        if reply.is_ok:
-            response = reply.ok
-            _print_sample_to_stdout(response, args.line, args.decoder)
+    for response in session.get(args.selector, zenoh.Queue(), value=args.value):
+        if response.is_ok:
+            _print_sample_to_stdout(response.ok, args.line, args.decoder)
         else:
             logger.error(
                 "Received error (%s) on get(%s)",
-                reply.err.payload.decode(),
+                response.err.payload.decode(),
                 args.selector,
             )
 
@@ -144,6 +143,11 @@ def subscribe(
 def network(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
+    import matplotlib.pyplot as plt
+
+    plt.style.use("dark_background")
+    from jsonpointer import resolve_pointer
+
     graph = nx.Graph()
 
     # Scout the nearby network
@@ -153,8 +157,7 @@ def network(
     # Query routers for more information
     for response in session.get("@/router/*", zenoh.Queue()):
         if response.is_ok:
-            reply = response.ok
-            data = json.loads(reply.payload)
+            data = json.loads(response.ok.payload)
 
             # Start adding edges and nodes
             zid = data["zid"]
@@ -171,10 +174,10 @@ def network(
 
         else:
             logger.error(
-                "Received error (%s) on get(%s)",
-                reply.err.payload.decode(),
-                args.selector,
+                "Received error (%s)",
+                response.err.payload.decode(),
             )
+            pass
 
     pos = nx.spring_layout(graph, seed=3113794652)
 
@@ -182,55 +185,66 @@ def network(
     routers = [
         node for node, attrs in graph.nodes.items() if attrs["whatami"] == "router"
     ]
-    peers = [node for node, attrs in graph.nodes.items() if attrs["whatami"] == "peer"]
-    clients = [
-        node for node, attrs in graph.nodes.items() if attrs["whatami"] == "client"
+    peers_clients = [
+        node
+        for node, attrs in graph.nodes.items()
+        if attrs["whatami"] in ("peer", "client")
     ]
-
     me = str(session.info().zid())
+
+    # Node labels
+    labels = {
+        zid: resolve_pointer(attributes, f"/metadata{args.metadata_field}", zid[:5])
+        for zid, attributes in graph.nodes(data=True)
+    }
+    labels[me] = "Me!"
 
     nx.draw_networkx(
         graph,
         pos,
         nodelist=routers,
-        node_color="#1f77b4",
+        edgelist=[],
+        node_color="steelblue",
         node_size=500,
         with_labels=False,
     )
     nx.draw_networkx(
-        graph, pos, nodelist=peers, node_color="#ff7f0e", with_labels=False
+        graph,
+        pos,
+        nodelist=peers_clients,
+        edgelist=[],
+        node_color="aliceblue",
+        with_labels=False,
     )
-    nx.draw_networkx(
-        graph, pos, nodelist=clients, node_color="#17becf", with_labels=False
-    )
-    nx.draw_networkx(graph, pos, nodelist=[me], node_color="#d62728", with_labels=False)
 
-    # Node labels
-    labels = {zid: zid[:5] for zid in nx.nodes(graph)}
-    nx.draw_networkx_labels(graph, pos, labels, font_color="y")
+    nx.draw_networkx(
+        graph,
+        pos,
+        nodelist=[me],
+        edgelist=[],
+        node_color="lightcoral",
+        with_labels=False,
+    )
+
+    nx.draw_networkx_labels(
+        graph, pos, labels, font_color="darkgrey", font_weight="bold"
+    )
 
     # Edges
+    nx.draw_networkx(
+        graph,
+        pos,
+        nodelist=[],
+        edge_color="white",
+        with_labels=False,
+    )
     nx.draw_networkx_edge_labels(
-        graph, pos, edge_labels=nx.get_edge_attributes(graph, "protocol"), rotate=False
+        graph,
+        pos,
+        edge_labels=nx.get_edge_attributes(graph, "protocol"),
+        rotate=False,
+        font_color="black",
     )
-
-    # Rendering of legend
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-
-    orange_legend_entry = mpatches.Patch(color="#1f77b4", label="Routers")
-    blue_legend_entry = mpatches.Patch(color="#ff7f0e", label="Peers")
-    white_legend_entry = mpatches.Patch(color="#17becf", label="Clients")
-    red_legend_entry = mpatches.Patch(color="#d62728", label="Me")
-    plt.legend(
-        handles=[
-            orange_legend_entry,
-            blue_legend_entry,
-            white_legend_entry,
-            red_legend_entry,
-        ]
-    )
-
     plt.tight_layout()
     plt.axis("off")
     plt.show()
@@ -367,6 +381,12 @@ def main():
     ## Network subcommand
     network_parser = subparsers.add_parser("network")
     network_parser.set_defaults(func=network)
+    network_parser.add_argument(
+        "--metadata-field",
+        type=str,
+        default="/name",
+        help="JSON pointer to a field in a routers metadata configuration",
+    )
 
     ## Scout subcommand
     scout_parser = subparsers.add_parser("scout")
