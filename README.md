@@ -1,5 +1,6 @@
-# zenoh-cli
-A command line tool for interacting with a Zenoh session
+# Zenoh CLI
+
+A command line tool for interacting with a Zenoh session. 
 
 Typical use cases include:
 * Tests

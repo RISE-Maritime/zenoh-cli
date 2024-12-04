@@ -10,6 +10,7 @@ import warnings
 import argparse
 from base64 import b64decode, b64encode
 from typing import Dict, Callable
+import threading
 
 import zenoh
 import parse
@@ -22,7 +23,7 @@ logger = logging.getLogger("zenoh-cli")
 def info(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
-    info = session.info()
+    info = session.info
     logger.info(f"zid: {info.zid()}")
     logger.info(f"routers: {info.routers_zid()}")
     logger.info(f"peers: {info.peers_zid()}")
@@ -31,9 +32,12 @@ def info(
 def scout(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
-    result = zenoh.scout(what=args.what, timeout=args.timeout)
-    for received in result.receiver():
-        logger.info(received)
+    print("Scouting...")
+    scout = zenoh.scout(what="peer|router")
+    threading.Timer(1.0, lambda: scout.stop()).start()
+
+    for hello in scout:
+        print(hello)
 
 
 def delete(
@@ -139,7 +143,7 @@ def subscribe(
         except KeyboardInterrupt:
             sys.exit(0)
 
-
+# TODO: Not properly working (something with router request, now it is not returning anything on line 170)
 def network(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
@@ -151,12 +155,21 @@ def network(
     graph = nx.Graph()
 
     # Scout the nearby network
-    for answer in zenoh.scout(what="peer|client", timeout=1.0).receiver():
+    scout = zenoh.scout(what="peer|router")
+    threading.Timer(1.0, lambda: scout.stop()).start()
+
+    for answer in scout:
+        logging.debug("Scout answer: %s", answer)
+        logging.debug("Scout answer zid: %s", answer.zid)
+        logging.debug("Scout answer whatami: %s", answer.whatami)
+        
         graph.add_node(str(answer.zid), whatami=str(answer.whatami))
 
     # Query routers for more information
-    for response in session.get("@/router/*", zenoh.Queue()):
+    # for response in session.get("@/router/*", zenoh.Queue()):
+    for response in session.get("@/router/*"):
         if response.is_ok:
+            logging.debug("Received router response: %s", response.ok.payload)
             data = json.loads(response.ok.payload)
 
             # Start adding edges and nodes
@@ -190,7 +203,10 @@ def network(
         for node, attrs in graph.nodes.items()
         if attrs["whatami"] in ("peer", "client")
     ]
-    me = str(session.info().zid())
+
+    info = session.info
+
+    me = str(info.zid())
 
     # Node labels
     labels = {
@@ -369,7 +385,14 @@ def main():
         type=pathlib.Path,
         help="A path to a configuration file.",
     )
-    parser.add_argument("--log-level", type=int, default=logging.INFO)
+
+
+    parser.add_argument(
+        "--log-level",
+        type=int,
+        default=30,
+        help="Log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR, 50=CRITICAL 0=NOTSET",
+    )
 
     ## Subcommands
     subparsers = parser.add_subparsers(required=True)
@@ -443,7 +466,8 @@ def main():
     )
     logging.captureWarnings(True)
     warnings.filterwarnings("once")
-    zenoh.init_logger()
+
+    zenoh.init_log_from_env_or("error")
 
     # Load the plugins
     load_plugins(plugin_encoders, plugin_decoders)
@@ -455,11 +479,11 @@ def main():
         else zenoh.Config()
     )
     if args.mode is not None:
-        conf.insert_json5(zenoh.config.MODE_KEY, json.dumps(args.mode))
+        conf.insert_json5("mode", json.dumps(args.mode))
     if args.connect is not None:
-        conf.insert_json5(zenoh.config.CONNECT_KEY, json.dumps(args.connect))
+        conf.insert_json5("connect/endpoints", json.dumps(args.connect))
     if args.listen is not None:
-        conf.insert_json5(zenoh.config.LISTEN_KEY, json.dumps(args.listen))
+        conf.insert_json5("listen/endpoints", json.dumps(args.listen))
 
     ## Construct session
     logger.info("Opening Zenoh session...")
