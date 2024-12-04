@@ -1,4 +1,6 @@
 -e .
+
 black==24.10.0
 pytest==8.2.2
+
 build
