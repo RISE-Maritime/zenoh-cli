@@ -143,6 +143,7 @@ def subscribe(
         except KeyboardInterrupt:
             sys.exit(0)
 
+
 # TODO: Not properly working (something with router request, now it is not returning anything on line 170)
 def network(
     session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
@@ -162,7 +163,7 @@ def network(
         logging.debug("Scout answer: %s", answer)
         logging.debug("Scout answer zid: %s", answer.zid)
         logging.debug("Scout answer whatami: %s", answer.whatami)
-        
+
         graph.add_node(str(answer.zid), whatami=str(answer.whatami))
 
     # Query routers for more information
@@ -385,7 +386,6 @@ def main():
         type=pathlib.Path,
         help="A path to a configuration file.",
     )
-
 
     parser.add_argument(
         "--log-level",
