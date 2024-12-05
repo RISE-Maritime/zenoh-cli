@@ -80,7 +80,7 @@ def put(
                     continue
 
                 session.put(
-                    keyexpr=key,
+                    key_expr=key,
                     value=value,
                     # encoding=args.encoding,
                     # priority=args.priority,
@@ -92,7 +92,7 @@ def put(
 
     else:
         session.put(
-            keyexpr=args.key,
+            key_expr=args.key,
             value=encoder(args.key, args.value),
             # encoding=args.encoding,
             # priority=args.priority,
