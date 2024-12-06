@@ -81,7 +81,7 @@ def put(
 
                 session.put(
                     key_expr=key,
-                    value=value,
+                    payload=value,
                     # encoding=args.encoding,
                     # priority=args.priority,
                     # congestion_control=args.congestion_control,
@@ -93,7 +93,7 @@ def put(
     else:
         session.put(
             key_expr=args.key,
-            value=encoder(args.key, args.value),
+            payload=encoder(args.key, args.value),
             # encoding=args.encoding,
             # priority=args.priority,
             # congestion_control=args.congestion_control,
