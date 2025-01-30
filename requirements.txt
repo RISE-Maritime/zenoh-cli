@@ -1,4 +1,4 @@
-eclipse-zenoh==1.0.3
+eclipse-zenoh==1.2.0
 parse
 networkx
 matplotlib
