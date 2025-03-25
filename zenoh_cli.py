@@ -21,16 +21,16 @@ logger = logging.getLogger("zenoh-cli")
 
 
 def info(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     info = session.info
-    logger.info(f"zid: {info.zid()}")
-    logger.info(f"routers: {info.routers_zid()}")
-    logger.info(f"peers: {info.peers_zid()}")
+    print(f"zid: {session.zid()}")
+    print(f"routers: {info.routers_zid()}")
+    print(f"peers: {info.peers_zid()}")
 
 
 def scout(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     print("Scouting...")
     scout = zenoh.scout(what="peer|router")
@@ -41,14 +41,14 @@ def scout(
 
 
 def delete(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     for key in args.key:
         session.delete(key)
 
 
 def put(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     # Validation
     if pattern := args.line:
@@ -102,7 +102,7 @@ def put(
 
 def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
     key = sample.key_expr
-    payload = sample.value.payload
+    payload = sample.payload.to_bytes()
 
     try:
         value = DECODERS[decoder](key, payload)
@@ -115,11 +115,11 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
 
 
 def get(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
-    for response in session.get(args.selector, zenoh.Queue(), value=args.value):
-        if response.is_ok:
-            _print_sample_to_stdout(response.ok, args.line, args.decoder)
+    for response in session.get(args.selector, payload=args.value):
+        if response := response.ok:
+            _print_sample_to_stdout(response, args.line, args.decoder)
         else:
             logger.error(
                 "Received error (%s) on get(%s)",
@@ -129,7 +129,7 @@ def get(
 
 
 def subscribe(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     def listener(sample: zenoh.Sample):
         """Print received samples to stdout according to specified format"""
@@ -144,9 +144,8 @@ def subscribe(
             sys.exit(0)
 
 
-# TODO: Not properly working (something with router request, now it is not returning anything on line 170)
 def network(
-    session: zenoh.Session, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     import matplotlib.pyplot as plt
 
@@ -154,6 +153,9 @@ def network(
     from jsonpointer import resolve_pointer
 
     graph = nx.Graph()
+
+    me = str(session.info.zid())
+    graph.add_node(me, whatami=config.get_json("mode"))
 
     # Scout the nearby network
     scout = zenoh.scout(what="peer|router")
@@ -167,11 +169,10 @@ def network(
         graph.add_node(str(answer.zid), whatami=str(answer.whatami))
 
     # Query routers for more information
-    # for response in session.get("@/router/*", zenoh.Queue()):
-    for response in session.get("@/router/*"):
-        if response.is_ok:
-            logging.debug("Received router response: %s", response.ok.payload)
-            data = json.loads(response.ok.payload)
+    for response in session.get("@/*/router"):
+        if response := response.ok:
+            logging.debug("Received router response: %s", response.payload)
+            data = json.loads(response.payload.to_string())
 
             # Start adding edges and nodes
             zid = data["zid"]
@@ -388,6 +389,14 @@ def main():
     )
 
     parser.add_argument(
+        "--cfg",
+        action="append",
+        type=str,
+        default=[],
+        help="Configuration option according to 'PATH:VALUE'",
+    )
+
+    parser.add_argument(
         "--log-level",
         type=int,
         default=30,
@@ -485,20 +494,24 @@ def main():
     if args.listen is not None:
         conf.insert_json5("listen/endpoints", json.dumps(args.listen))
 
+    for config_option in args.cfg:
+        path, value = config_option.split(":", maxsplit=1)
+        logger.info("Configuring with PATH=%s, VALUE=%s", path, value)
+        try:
+            conf.insert_json5(path, value)
+        except:
+            conf.insert_json5(path, json.dumps(value))
+
+
     ## Construct session
     logger.info("Opening Zenoh session...")
-    session = zenoh.open(conf)
+    with zenoh.open(conf) as session:
 
-    def _on_exit():
-        session.close()
-
-    atexit.register(_on_exit)
-
-    # Dispatch to correct function
-    try:
-        args.func(session, parser, args)
-    except KeyboardInterrupt:
-        sys.exit(0)
+        # Dispatch to correct function
+        try:
+            args.func(session, conf, parser, args)
+        except KeyboardInterrupt:
+            sys.exit(0)
 
 
 if __name__ == "__main__":
