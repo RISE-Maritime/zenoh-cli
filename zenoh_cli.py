@@ -21,7 +21,10 @@ logger = logging.getLogger("zenoh-cli")
 
 
 def info(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     info = session.info
     print(f"zid: {session.zid()}")
@@ -30,7 +33,10 @@ def info(
 
 
 def scout(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     print("Scouting...")
     scout = zenoh.scout(what="peer|router")
@@ -41,14 +47,20 @@ def scout(
 
 
 def delete(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     for key in args.key:
         session.delete(key)
 
 
 def put(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     # Validation
     if pattern := args.line:
@@ -115,7 +127,10 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
 
 
 def get(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     for response in session.get(args.selector, payload=args.value):
         if response.ok:
@@ -129,7 +144,10 @@ def get(
 
 
 def subscribe(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     def listener(sample: zenoh.Sample):
         """Print received samples to stdout according to specified format"""
@@ -145,7 +163,10 @@ def subscribe(
 
 
 def network(
-    session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
 ):
     import matplotlib.pyplot as plt
 
@@ -502,11 +523,9 @@ def main():
         except:
             conf.insert_json5(path, json.dumps(value))
 
-
     ## Construct session
     logger.info("Opening Zenoh session...")
     with zenoh.open(conf) as session:
-
         # Dispatch to correct function
         try:
             args.func(session, conf, parser, args)
