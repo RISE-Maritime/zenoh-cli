@@ -18,12 +18,12 @@ with open("requirements.txt") as f:
 
 setup(
     name="zenoh-cli",
-    version="0.6.3",
+    version="0.6.4",
     license="Apache License 2.0",
     description="CLI for Zenoh",
     long_description=read("README.md"),
     long_description_content_type="text/markdown",
-    url="https://github.com/MO-RISE/zenoh-cli",
+    url="https://github.com/RISE-Maritime/zenoh-cli",
     author="Fredrik Olsson",
     author_email="fredrik.x.olsson@ri.se",
     maintainer="Fredrik Olsson",
