@@ -118,12 +118,12 @@ def get(
     session: zenoh.Session, config: zenoh.Config, parser: argparse.ArgumentParser, args: argparse.Namespace
 ):
     for response in session.get(args.selector, payload=args.value):
-        if response := response.ok:
-            _print_sample_to_stdout(response, args.line, args.decoder)
+        if response.ok:
+            _print_sample_to_stdout(response.ok, args.line, args.decoder)
         else:
             logger.error(
                 "Received error (%s) on get(%s)",
-                response.err.payload.decode(),
+                response.err.payload.to_bytes(),
                 args.selector,
             )
 
@@ -170,9 +170,9 @@ def network(
 
     # Query routers for more information
     for response in session.get("@/*/router"):
-        if response := response.ok:
-            logging.debug("Received router response: %s", response.payload)
-            data = json.loads(response.payload.to_string())
+        if response.ok:
+            logging.debug("Received router response: %s", response.ok.payload)
+            data = json.loads(response.ok.payload.to_string())
 
             # Start adding edges and nodes
             zid = data["zid"]
@@ -190,7 +190,7 @@ def network(
         else:
             logger.error(
                 "Received error (%s)",
-                response.err.payload.decode(),
+                response.err.payload.to_bytes(),
             )
             pass
 
