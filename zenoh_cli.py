@@ -386,7 +386,7 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=["peer", "client"],
+        choices=["peer", "client", "router"],
         default="peer",
         type=str,
     )
