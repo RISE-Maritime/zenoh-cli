@@ -132,7 +132,12 @@ def get(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
 ):
-    for response in session.get(args.selector, payload=args.value):
+    encoder = ENCODERS[args.encoder]
+
+    for response in session.get(
+        args.selector,
+        payload=encoder(args.selector, args.value) if args.value is not None else None,
+    ):
         if response.ok:
             _print_sample_to_stdout(response.ok, args.line, args.decoder)
         else:

@@ -136,6 +136,7 @@ def test_get_command(mock_zenoh_session, capsys):
     args.selector = "test/*"
     args.value = None
     args.line = "{value}"
+    args.encoder = "text"
     args.decoder = "text"
 
     # Call get function
