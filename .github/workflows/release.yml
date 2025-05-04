@@ -6,13 +6,10 @@ on:
 
 jobs:
   build-n-release:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheels on ubuntu-latest
     permissions:
       id-token: write
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
