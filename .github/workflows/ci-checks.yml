@@ -5,9 +5,7 @@ name: CI checks
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 jobs:
   linting:
@@ -19,13 +17,14 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v6
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements_dev.txt
+        uv pip install -e .[dev] --system
     - name: Run black
       run: |
-        black --check .
+        uv run black --check .
 
   testing:
 
@@ -36,12 +35,13 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v6
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements_dev.txt
+        uv pip install -e .[dev] --system
     - name: Run pytest
       run: |
-        pytest tests/
+        uv run pytest tests/
 
 

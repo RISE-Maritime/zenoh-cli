@@ -1,3 +1,39 @@
-   [build-system]
-   requires = ["setuptools>=64", "wheel"]
-   build-backend = "setuptools.build_meta"
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zenoh-cli"
+version = "0.6.6"
+description = "CLI for Zenoh"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache License 2.0" }
+authors = [
+    { name = "Fredrik Olsson", email = "fredrik.x.olsson@ri.se" }
+]
+maintainers = [
+    { name = "Fredrik Olsson", email = "fredrik.x.olsson@ri.se" }
+]
+dependencies = [
+    "eclipse-zenoh>=1.2.1",
+    "parse",
+    "networkx",
+    "matplotlib",
+    "jsonpointer",
+    "importlib_metadata; python_version < '3.10'"
+]
+urls = { Homepage = "https://github.com/RISE-Maritime/zenoh-cli" }
+
+[project.scripts]
+zenoh = "zenoh_cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "black==25.1.0",
+    "pytest==8.3.5",
+    "build"
+]
+
+[tool.setuptools]
+py-modules = ["zenoh_cli"]
