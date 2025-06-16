@@ -18,7 +18,7 @@ with open("requirements.txt") as f:
 
 setup(
     name="zenoh-cli",
-    version="0.6.5",
+    version="0.6.6",
     license="Apache License 2.0",
     description="CLI for Zenoh",
     long_description=read("README.md"),
