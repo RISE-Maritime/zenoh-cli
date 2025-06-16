@@ -207,9 +207,18 @@ def network(
             for sess in data["sessions"]:
                 peer = sess["peer"]
                 whatami = sess["whatami"]
-                link_protocols = ",".join(
-                    [link.split("/")[0] for link in sess["links"]]
-                )
+
+                try:
+                    # Zenohd >= 1.4.0
+                    link_protocols = ",".join(
+                        [link["src"].split("/")[0] for link in sess["links"]]
+                    )
+                except TypeError:
+                    # Zenohd < 1.4.0
+                    link_protocols = ",".join(
+                        [link.split("/")[0] for link in sess["links"]]
+                    )
+
                 graph.add_node(peer, whatami=whatami)
                 graph.add_edge(zid, peer, protocol=link_protocols)
 
