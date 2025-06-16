@@ -183,10 +183,13 @@ def test_network_command(mock_zenoh_session):
     args.metadata_field = "/name"
 
     # Mock required external dependencies
-    with patch("zenoh.scout"), patch("matplotlib.pyplot.show"), patch(
-        "networkx.spring_layout"
-    ), patch("networkx.draw_networkx"), patch("networkx.draw_networkx_labels"), patch(
-        "networkx.draw_networkx_edge_labels"
+    with (
+        patch("zenoh.scout"),
+        patch("matplotlib.pyplot.show"),
+        patch("networkx.spring_layout"),
+        patch("networkx.draw_networkx"),
+        patch("networkx.draw_networkx_labels"),
+        patch("networkx.draw_networkx_edge_labels"),
     ):
         # Setup mock session info and config
         mock_config = MagicMock()
@@ -200,9 +203,12 @@ def test_network_command(mock_zenoh_session):
 
 def test_main_function():
     """Test the main function with minimal mocking."""
-    with patch("sys.argv", ["zenoh", "info"]), patch("zenoh.open"), patch(
-        "zenoh.Config"
-    ) as mock_config, patch("zenoh_cli.info") as mock_info_func:
+    with (
+        patch("sys.argv", ["zenoh", "info"]),
+        patch("zenoh.open"),
+        patch("zenoh.Config") as mock_config,
+        patch("zenoh_cli.info") as mock_info_func,
+    ):
         # Call main
         zenoh_cli.main()
 
