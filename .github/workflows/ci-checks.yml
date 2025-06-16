@@ -5,9 +5,7 @@ name: CI checks
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 
 jobs:
   linting:
