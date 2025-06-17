@@ -236,10 +236,9 @@ def network(
     routers = [
         node for node, attrs in graph.nodes.items() if attrs["whatami"] == "router"
     ]
-    peers_clients = [
-        node
-        for node, attrs in graph.nodes.items()
-        if attrs["whatami"] in ("peer", "client")
+    peers = [node for node, attrs in graph.nodes.items() if attrs["whatami"] == "peer"]
+    clients = [
+        node for node, attrs in graph.nodes.items() if attrs["whatami"] == "client"
     ]
 
     info = session.info
@@ -265,9 +264,17 @@ def network(
     nx.draw_networkx(
         graph,
         pos,
-        nodelist=peers_clients,
+        nodelist=peers,
         edgelist=[],
         node_color="aliceblue",
+        with_labels=False,
+    )
+    nx.draw_networkx(
+        graph,
+        pos,
+        nodelist=clients,
+        edgelist=[],
+        node_color="Lightgreen",
         with_labels=False,
     )
 
