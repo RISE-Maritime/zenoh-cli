@@ -5,6 +5,7 @@ import json
 import time
 import atexit
 import logging
+import os
 import pathlib
 import warnings
 import argparse
@@ -308,7 +309,16 @@ def network(
     )
     plt.tight_layout()
     plt.axis("off")
-    plt.show()
+
+    if not args.save_fig:
+        plt.show()
+        return
+
+    output_file = "zenoh_network.png"
+    plt.gcf().set_size_inches(10, 10)
+    plt.savefig(output_file)
+    plt.close()
+    print(f"Network visualization saved to {os.path.abspath(output_file)}")
 
 
 # Bundled codecs
@@ -461,6 +471,11 @@ def main():
         type=str,
         default="/name",
         help="JSON pointer to a field in a routers metadata configuration",
+    )
+    network_parser.add_argument(
+        "--save-fig",
+        action="store_true",
+        help="Save the network visualization to a file instead of displaying it",
     )
 
     # Scout subcommand
