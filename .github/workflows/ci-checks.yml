@@ -17,14 +17,15 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
-    - name: Install the latest version of uv
-      uses: astral-sh/setup-uv@v6
+    - name: Upgrade pip (required as --group was introduced in pip 25.1.0)
+      run: |
+        pip install --upgrade pip
     - name: Install dependencies
       run: |
-        uv pip install -e .[dev] --system
+        pip install --group dev
     - name: Run black
       run: |
-        uv run black --check .
+        black --check .
 
   testing:
 
@@ -35,13 +36,14 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
-    - name: Install the latest version of uv
-      uses: astral-sh/setup-uv@v6
+    - name: Upgrade pip (required as --group was introduced in pip 25.1.0)
+      run: |
+        pip install --upgrade pip
     - name: Install dependencies
       run: |
-        uv pip install -e .[dev] --system
+        pip install -e . --group dev
     - name: Run pytest
       run: |
-        uv run pytest tests/
+        pytest tests/
 
 

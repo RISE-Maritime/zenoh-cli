@@ -28,10 +28,10 @@ urls = { Homepage = "https://github.com/RISE-Maritime/zenoh-cli" }
 [project.scripts]
 zenoh = "zenoh_cli:main"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "black==25.1.0",
-    "pytest==8.3.5",
+    "pytest==8.4.0",
     "build"
 ]
 
