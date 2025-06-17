@@ -122,7 +122,8 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
         logger.exception("Decoder (%s) failed, skipping!", decoder)
         return
 
-    sys.stdout.write(f"{fmt.format(key=key, value=value)}\n")
+    sys.stdout.write(fmt.format(key=key, value=value).rstrip())
+    sys.stdout.write("\n")
     sys.stdout.flush()
 
 
@@ -303,10 +304,10 @@ def network(
     plt.show()
 
 
-## Bundled codecs
+# Bundled codecs
 
 
-### Text codec
+# Text codec
 def encode_from_text(key: str, value: str) -> bytes:
     return value.encode()
 
@@ -315,7 +316,7 @@ def decode_to_text(key: str, value: bytes) -> str:
     return value.decode()
 
 
-### Base64 codec
+# Base64 codec
 def encode_from_base64(key: str, value: str) -> bytes:
     return b64decode(value.encode())
 
@@ -324,7 +325,7 @@ def decode_to_base64(key: str, value: bytes) -> str:
     return b64encode(value).decode()
 
 
-### JSON codec
+# JSON codec
 def encode_from_json(key: str, value: str) -> bytes:
     return encode_from_text(key, value)
 
@@ -347,7 +348,7 @@ DECODERS: Dict[str, Callable] = {
 }
 
 
-## Plugin handling
+# Plugin handling
 def gather_plugins():
     # NOTE: Python 3.8.x-3.9.x doesn't support the `group` keyword argument in
     # entry_points, in that case we fallback to `importlib_metadata`.
@@ -388,7 +389,7 @@ def load_plugins(plugin_encoders, plugin_decoders):
             logger.exception("Failed to load decoder plugin with name: %s", name)
 
 
-## Entrypoint
+# Entrypoint
 def main():
     plugin_encoders, plugin_decoders = gather_plugins()
 
@@ -438,14 +439,14 @@ def main():
         help="Log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR, 50=CRITICAL 0=NOTSET",
     )
 
-    ## Subcommands
+    # Subcommands
     subparsers = parser.add_subparsers(required=True)
 
-    ## Info subcommand
+    # Info subcommand
     info_parser = subparsers.add_parser("info")
     info_parser.set_defaults(func=info)
 
-    ## Network subcommand
+    # Network subcommand
     network_parser = subparsers.add_parser("network")
     network_parser.set_defaults(func=network)
     network_parser.add_argument(
@@ -455,18 +456,18 @@ def main():
         help="JSON pointer to a field in a routers metadata configuration",
     )
 
-    ## Scout subcommand
+    # Scout subcommand
     scout_parser = subparsers.add_parser("scout")
     scout_parser.add_argument("-w", "--what", type=str, default="peer|router")
     scout_parser.add_argument("-t", "--timeout", type=float, default=1.0)
     scout_parser.set_defaults(func=scout)
 
-    ## Delete subcommand
+    # Delete subcommand
     delete_parser = subparsers.add_parser("delete")
     delete_parser.add_argument("-k", "--key", type=str, action="append", required=True)
     delete_parser.set_defaults(func=delete)
 
-    ## Common parser for all subcommands
+    # Common parser for all subcommands
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument(
         "--encoder",
@@ -479,14 +480,14 @@ def main():
         default="base64",
     )
 
-    ## Put subcommand
+    # Put subcommand
     put_parser = subparsers.add_parser("put", parents=[common_parser])
     put_parser.add_argument("-k", "--key", type=str, default=None)
     put_parser.add_argument("-v", "--value", type=str, default=None)
     put_parser.add_argument("--line", type=str, default=None)
     put_parser.set_defaults(func=put)
 
-    ## Subscribe subcommand
+    # Subscribe subcommand
     subscribe_parser = subparsers.add_parser("subscribe", parents=[common_parser])
     subscribe_parser.add_argument(
         "-k", "--key", type=str, action="append", required=True
@@ -494,14 +495,14 @@ def main():
     subscribe_parser.add_argument("--line", type=str, default="{value}")
     subscribe_parser.set_defaults(func=subscribe)
 
-    ## Get subcommand
+    # Get subcommand
     get_parser = subparsers.add_parser("get", parents=[common_parser])
     get_parser.add_argument("-s", "--selector", type=str, required=True)
     get_parser.add_argument("-v", "--value", type=str, default=None)
     get_parser.add_argument("--line", type=str, default="{value}")
     get_parser.set_defaults(func=get)
 
-    ## Parse arguments and start doing our thing
+    # Parse arguments and start doing our thing
     args = parser.parse_args()
 
     # Setup logger
@@ -537,7 +538,7 @@ def main():
         except:
             conf.insert_json5(path, json.dumps(value))
 
-    ## Construct session
+    # Construct session
     logger.info("Opening Zenoh session...")
     with zenoh.open(conf) as session:
         # Dispatch to correct function
