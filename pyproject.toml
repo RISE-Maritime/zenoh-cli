@@ -31,7 +31,7 @@ zenoh = "zenoh_cli:main"
 [dependency-groups]
 dev = [
     "black==25.1.0",
-    "pytest==8.4.1",
+    "pytest==8.4.2",
     "build"
 ]
 
