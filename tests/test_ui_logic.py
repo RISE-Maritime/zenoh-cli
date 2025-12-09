@@ -375,7 +375,9 @@ def test_output_format_with_attachment(capsys):
     sample.attachment = [(mock_key, mock_value)]
 
     # Test {attachment:KEY} format
-    zenoh_cli._print_sample_to_stdout(sample, "{key}: {value} (source={attachment:source})", "text")
+    zenoh_cli._print_sample_to_stdout(
+        sample, "{key}: {value} (source={attachment:source})", "text"
+    )
     captured = capsys.readouterr()
     assert "test/key: test_value (source=device1)" in captured.out
 

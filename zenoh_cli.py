@@ -37,7 +37,9 @@ def parse_attachments(attachment_args: list) -> dict:
     result = {}
     for item in attachment_args:
         if "=" not in item:
-            raise ValueError(f"Invalid attachment format '{item}'. Expected 'KEY=VALUE'.")
+            raise ValueError(
+                f"Invalid attachment format '{item}'. Expected 'KEY=VALUE'."
+            )
         key, value = item.split("=", maxsplit=1)
         result[key] = value
 
@@ -60,9 +62,9 @@ def format_attachment_value(attachment, key: str) -> str:
     try:
         # Attachment is dict-like, try to get the key
         for k, v in attachment:
-            k_str = k.to_string() if hasattr(k, 'to_string') else str(k)
+            k_str = k.to_string() if hasattr(k, "to_string") else str(k)
             if k_str == key:
-                v_str = v.to_string() if hasattr(v, 'to_string') else str(v)
+                v_str = v.to_string() if hasattr(v, "to_string") else str(v)
                 return v_str
     except (TypeError, AttributeError):
         pass
@@ -85,8 +87,8 @@ def format_attachments_json(attachment) -> str:
     try:
         result = {}
         for k, v in attachment:
-            k_str = k.to_string() if hasattr(k, 'to_string') else str(k)
-            v_str = v.to_string() if hasattr(v, 'to_string') else str(v)
+            k_str = k.to_string() if hasattr(k, "to_string") else str(k)
+            v_str = v.to_string() if hasattr(v, "to_string") else str(v)
             result[k_str] = v_str
         return json.dumps(result)
     except (TypeError, AttributeError):
@@ -228,12 +230,14 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
         att_key = match.group(1)
         return format_attachment_value(attachment, att_key)
 
-    output = re.sub(r'\{attachment:([^}]+)\}', replace_attachment_key, fmt)
+    output = re.sub(r"\{attachment:([^}]+)\}", replace_attachment_key, fmt)
 
     # Handle {attachment} placeholder - format all attachments as JSON
     # Escape curly braces in JSON to prevent conflicts with .format()
-    attachment_json = format_attachments_json(attachment).replace('{', '{{').replace('}', '}}')
-    output = output.replace('{attachment}', attachment_json)
+    attachment_json = (
+        format_attachments_json(attachment).replace("{", "{{").replace("}", "}}")
+    )
+    output = output.replace("{attachment}", attachment_json)
 
     # Handle remaining standard placeholders
     output = output.format(key=key, value=value)
