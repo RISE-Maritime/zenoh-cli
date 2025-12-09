@@ -83,14 +83,15 @@ def test_delete_command(mock_zenoh_session):
     # Create mock arguments
     args = MagicMock()
     args.key = ["test/key1", "test/key2"]
+    args.attachment = []
 
     # Call the delete function
     zenoh_cli.delete(mock_zenoh_session, None, None, args)
 
     # Verify delete was called for each key
     assert mock_zenoh_session.delete.call_count == 2
-    mock_zenoh_session.delete.assert_any_call("test/key1")
-    mock_zenoh_session.delete.assert_any_call("test/key2")
+    mock_zenoh_session.delete.assert_any_call("test/key1", attachment=None)
+    mock_zenoh_session.delete.assert_any_call("test/key2", attachment=None)
 
 
 def test_put_command(mock_zenoh_session):
@@ -101,10 +102,12 @@ def test_put_command(mock_zenoh_session):
     args.value = "test_value"
     args.line = None
     args.encoder = "text"
+    args.attachment = []
+    args.attachment_from_line = []
 
     zenoh_cli.put(mock_zenoh_session, None, None, args)
     mock_zenoh_session.put.assert_called_once_with(
-        key_expr="test/key", payload=b"test_value"
+        key_expr="test/key", payload=b"test_value", attachment=None
     )
 
     # Reset mock
@@ -119,7 +122,7 @@ def test_put_command(mock_zenoh_session):
     with patch("sys.stdin", io.StringIO("test/line: test_line_value")):
         zenoh_cli.put(mock_zenoh_session, None, None, args)
         mock_zenoh_session.put.assert_called_once_with(
-            key_expr="test/line", payload=b"test_line_value"
+            key_expr="test/line", payload=b"test_line_value", attachment=None
         )
 
 
@@ -129,6 +132,7 @@ def test_get_command(mock_zenoh_session, capsys):
     mock_response = MagicMock()
     mock_response.ok.key_expr = "test/key"
     mock_response.ok.payload.to_bytes.return_value = b"test_value"
+    mock_response.ok.attachment = None
     mock_zenoh_session.get.return_value = [mock_response]
 
     # Setup arguments
@@ -138,6 +142,7 @@ def test_get_command(mock_zenoh_session, capsys):
     args.line = "{value}"
     args.encoder = "text"
     args.decoder = "text"
+    args.attachment = []
 
     # Call get function
     zenoh_cli.get(mock_zenoh_session, None, None, args)
@@ -161,6 +166,7 @@ def test_subscribe_command(mock_zenoh_session):
     sample = MagicMock()
     sample.key_expr = "test/key1"
     sample.payload.to_bytes.return_value = b"test_value"
+    sample.attachment = None
 
     # Patch the time.sleep to prevent infinite loop
     with patch("time.sleep", side_effect=KeyboardInterrupt):
@@ -217,3 +223,186 @@ def test_main_function():
 
         # Verify info function was called
         mock_info_func.assert_called_once()
+
+
+# Attachment functionality tests
+
+
+def test_parse_attachments():
+    """Test parsing attachments from command line arguments."""
+    # Test empty attachments
+    assert zenoh_cli.parse_attachments([]) is None
+    assert zenoh_cli.parse_attachments(None) is None
+
+    # Test single attachment
+    result = zenoh_cli.parse_attachments(["key=value"])
+    assert result == {"key": "value"}
+
+    # Test multiple attachments
+    result = zenoh_cli.parse_attachments(["key1=value1", "key2=value2"])
+    assert result == {"key1": "value1", "key2": "value2"}
+
+    # Test value with equals sign
+    result = zenoh_cli.parse_attachments(["key=value=with=equals"])
+    assert result == {"key": "value=with=equals"}
+
+    # Test invalid format (no equals sign)
+    with pytest.raises(ValueError) as exc_info:
+        zenoh_cli.parse_attachments(["invalid"])
+    assert "Invalid attachment format" in str(exc_info.value)
+
+
+def test_format_attachments_json():
+    """Test formatting attachments as JSON."""
+    # Test None attachment
+    assert zenoh_cli.format_attachments_json(None) == "{}"
+
+    # Test with mock attachment that returns key-value pairs
+    mock_attachment = [
+        (MagicMock(to_string=lambda: "key1"), MagicMock(to_string=lambda: "value1")),
+        (MagicMock(to_string=lambda: "key2"), MagicMock(to_string=lambda: "value2")),
+    ]
+    result = zenoh_cli.format_attachments_json(mock_attachment)
+    parsed = json.loads(result)
+    assert parsed == {"key1": "value1", "key2": "value2"}
+
+
+def test_format_attachment_value():
+    """Test extracting a specific attachment value."""
+    # Test None attachment
+    assert zenoh_cli.format_attachment_value(None, "key") == ""
+
+    # Test with mock attachment
+    mock_key = MagicMock()
+    mock_key.to_string.return_value = "mykey"
+    mock_value = MagicMock()
+    mock_value.to_string.return_value = "myvalue"
+    mock_attachment = [(mock_key, mock_value)]
+
+    assert zenoh_cli.format_attachment_value(mock_attachment, "mykey") == "myvalue"
+    assert zenoh_cli.format_attachment_value(mock_attachment, "nonexistent") == ""
+
+
+def test_put_with_attachments(mock_zenoh_session):
+    """Test put command with attachments."""
+    args = MagicMock()
+    args.key = "test/key"
+    args.value = "test_value"
+    args.line = None
+    args.encoder = "text"
+    args.attachment = ["source=device1", "priority=high"]
+    args.attachment_from_line = []
+
+    zenoh_cli.put(mock_zenoh_session, None, None, args)
+
+    mock_zenoh_session.put.assert_called_once_with(
+        key_expr="test/key",
+        payload=b"test_value",
+        attachment={"source": "device1", "priority": "high"},
+    )
+
+
+def test_delete_with_attachments(mock_zenoh_session):
+    """Test delete command with attachments."""
+    args = MagicMock()
+    args.key = ["test/key"]
+    args.attachment = ["reason=expired"]
+
+    zenoh_cli.delete(mock_zenoh_session, None, None, args)
+
+    mock_zenoh_session.delete.assert_called_once_with(
+        "test/key", attachment={"reason": "expired"}
+    )
+
+
+def test_get_with_attachments(mock_zenoh_session, capsys):
+    """Test get command with attachments."""
+    # Create mock response
+    mock_response = MagicMock()
+    mock_response.ok.key_expr = "test/key"
+    mock_response.ok.payload.to_bytes.return_value = b"test_value"
+    mock_response.ok.attachment = None
+    mock_zenoh_session.get.return_value = [mock_response]
+
+    args = MagicMock()
+    args.selector = "test/*"
+    args.value = None
+    args.line = "{value}"
+    args.encoder = "text"
+    args.decoder = "text"
+    args.attachment = ["request-id=abc123"]
+
+    zenoh_cli.get(mock_zenoh_session, None, None, args)
+
+    # Verify get was called with attachment
+    mock_zenoh_session.get.assert_called_once()
+    call_kwargs = mock_zenoh_session.get.call_args[1]
+    assert call_kwargs["attachment"] == {"request-id": "abc123"}
+
+
+def test_put_attachment_from_line(mock_zenoh_session):
+    """Test put command with --attachment-from-line."""
+    args = MagicMock()
+    args.key = None
+    args.value = None
+    args.line = "id={id} key={key} value={value}"
+    args.encoder = "text"
+    args.attachment = []
+    args.attachment_from_line = ["id"]
+
+    with patch("sys.stdin", io.StringIO("id=device1 key=sensor/temp value=23.5")):
+        zenoh_cli.put(mock_zenoh_session, None, None, args)
+
+    mock_zenoh_session.put.assert_called_once_with(
+        key_expr="sensor/temp",
+        payload=b"23.5",
+        attachment={"id": "device1"},
+    )
+
+
+def test_output_format_with_attachment(capsys):
+    """Test _print_sample_to_stdout with attachment formatting."""
+    # Create mock sample with attachment
+    sample = MagicMock()
+    sample.key_expr = "test/key"
+    sample.payload.to_bytes.return_value = b"test_value"
+
+    # Create mock attachment
+    mock_key = MagicMock()
+    mock_key.to_string.return_value = "source"
+    mock_value = MagicMock()
+    mock_value.to_string.return_value = "device1"
+    sample.attachment = [(mock_key, mock_value)]
+
+    # Test {attachment:KEY} format
+    zenoh_cli._print_sample_to_stdout(
+        sample, "{key}: {value} (source={attachment:source})", "text"
+    )
+    captured = capsys.readouterr()
+    assert "test/key: test_value (source=device1)" in captured.out
+
+
+def test_output_format_with_all_attachments(capsys):
+    """Test _print_sample_to_stdout with {attachment} format."""
+    # Create mock sample with attachment
+    sample = MagicMock()
+    sample.key_expr = "test/key"
+    sample.payload.to_bytes.return_value = b"test_value"
+
+    # Create mock attachment with multiple keys
+    mock_key1 = MagicMock()
+    mock_key1.to_string.return_value = "key1"
+    mock_value1 = MagicMock()
+    mock_value1.to_string.return_value = "value1"
+    mock_key2 = MagicMock()
+    mock_key2.to_string.return_value = "key2"
+    mock_value2 = MagicMock()
+    mock_value2.to_string.return_value = "value2"
+    sample.attachment = [(mock_key1, mock_value1), (mock_key2, mock_value2)]
+
+    zenoh_cli._print_sample_to_stdout(sample, "{value} [{attachment}]", "text")
+    captured = capsys.readouterr()
+    # Check that output contains JSON-formatted attachments
+    assert "test_value" in captured.out
+    assert '"key1": "value1"' in captured.out
+    assert '"key2": "value2"' in captured.out

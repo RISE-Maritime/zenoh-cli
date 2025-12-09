@@ -7,6 +7,7 @@ import atexit
 import logging
 import os
 import pathlib
+import re
 import warnings
 import argparse
 from base64 import b64decode, b64encode
@@ -19,6 +20,79 @@ import networkx as nx
 
 
 logger = logging.getLogger("zenoh-cli")
+
+
+def parse_attachments(attachment_args: list) -> dict:
+    """Parse --attachment KEY=VALUE arguments into a dict for zenoh API.
+
+    Args:
+        attachment_args: List of strings in "KEY=VALUE" format
+
+    Returns:
+        Dictionary mapping keys to values, or None if no attachments
+    """
+    if not attachment_args:
+        return None
+
+    result = {}
+    for item in attachment_args:
+        if "=" not in item:
+            raise ValueError(
+                f"Invalid attachment format '{item}'. Expected 'KEY=VALUE'."
+            )
+        key, value = item.split("=", maxsplit=1)
+        result[key] = value
+
+    return result if result else None
+
+
+def format_attachment_value(attachment, key: str) -> str:
+    """Extract a specific key from an attachment.
+
+    Args:
+        attachment: Zenoh attachment object (dict-like or None)
+        key: The key to extract
+
+    Returns:
+        String value of the attachment key, or empty string if not found
+    """
+    if attachment is None:
+        return ""
+
+    try:
+        # Attachment is dict-like, try to get the key
+        for k, v in attachment:
+            k_str = k.to_string() if hasattr(k, "to_string") else str(k)
+            if k_str == key:
+                v_str = v.to_string() if hasattr(v, "to_string") else str(v)
+                return v_str
+    except (TypeError, AttributeError):
+        pass
+
+    return ""
+
+
+def format_attachments_json(attachment) -> str:
+    """Format all attachments as a JSON string.
+
+    Args:
+        attachment: Zenoh attachment object (dict-like or None)
+
+    Returns:
+        JSON string representation of attachments, or "{}" if none
+    """
+    if attachment is None:
+        return "{}"
+
+    try:
+        result = {}
+        for k, v in attachment:
+            k_str = k.to_string() if hasattr(k, "to_string") else str(k)
+            v_str = v.to_string() if hasattr(v, "to_string") else str(v)
+            result[k_str] = v_str
+        return json.dumps(result)
+    except (TypeError, AttributeError):
+        return "{}"
 
 
 def info(
@@ -53,8 +127,14 @@ def delete(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
 ):
+    # Parse attachments
+    try:
+        attachment = parse_attachments(args.attachment)
+    except ValueError as e:
+        parser.error(str(e))
+
     for key in args.key:
-        session.delete(key)
+        session.delete(key, attachment=attachment)
 
 
 def put(
@@ -79,6 +159,15 @@ def put(
 
     encoder = ENCODERS[args.encoder]
 
+    # Parse command-line attachments
+    try:
+        base_attachment = parse_attachments(args.attachment)
+    except ValueError as e:
+        parser.error(str(e))
+
+    # Get list of attachment keys to extract from line parsing
+    attachment_from_line = args.attachment_from_line or []
+
     if pattern := args.line:
         line_parser = parse.compile(pattern)
 
@@ -92,9 +181,20 @@ def put(
                     logger.exception("Encoder (%s) failed, skipping!", args.encoder)
                     continue
 
+                # Build attachment: start with base, add line-extracted values
+                attachment = dict(base_attachment) if base_attachment else {}
+                for att_key in attachment_from_line:
+                    if att_key in result.named:
+                        attachment[att_key] = result[att_key]
+                    else:
+                        logger.warning(
+                            "Attachment key '%s' not found in parsed line", att_key
+                        )
+
                 session.put(
                     key_expr=key,
                     payload=value,
+                    attachment=attachment if attachment else None,
                     # encoding=args.encoding,
                     # priority=args.priority,
                     # congestion_control=args.congestion_control,
@@ -107,6 +207,7 @@ def put(
         session.put(
             key_expr=args.key,
             payload=encoder(args.key, args.value),
+            attachment=base_attachment,
             # encoding=args.encoding,
             # priority=args.priority,
             # congestion_control=args.congestion_control,
@@ -116,6 +217,7 @@ def put(
 def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
     key = sample.key_expr
     payload = sample.payload.to_bytes()
+    attachment = sample.attachment
 
     try:
         value = DECODERS[decoder](key, payload)
@@ -123,7 +225,24 @@ def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
         logger.exception("Decoder (%s) failed, skipping!", decoder)
         return
 
-    sys.stdout.write(fmt.format(key=key, value=value).rstrip())
+    # Handle {attachment:KEY} placeholders - extract specific attachment values
+    def replace_attachment_key(match):
+        att_key = match.group(1)
+        return format_attachment_value(attachment, att_key)
+
+    output = re.sub(r"\{attachment:([^}]+)\}", replace_attachment_key, fmt)
+
+    # Handle {attachment} placeholder - format all attachments as JSON
+    # Escape curly braces in JSON to prevent conflicts with .format()
+    attachment_json = (
+        format_attachments_json(attachment).replace("{", "{{").replace("}", "}}")
+    )
+    output = output.replace("{attachment}", attachment_json)
+
+    # Handle remaining standard placeholders
+    output = output.format(key=key, value=value)
+
+    sys.stdout.write(output.rstrip())
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -136,9 +255,16 @@ def get(
 ):
     encoder = ENCODERS[args.encoder]
 
+    # Parse attachments
+    try:
+        attachment = parse_attachments(args.attachment)
+    except ValueError as e:
+        parser.error(str(e))
+
     for response in session.get(
         args.selector,
         payload=encoder(args.selector, args.value) if args.value is not None else None,
+        attachment=attachment,
     ):
         if response.ok:
             _print_sample_to_stdout(response.ok, args.line, args.decoder)
@@ -487,6 +613,14 @@ def main():
     # Delete subcommand
     delete_parser = subparsers.add_parser("delete")
     delete_parser.add_argument("-k", "--key", type=str, action="append", required=True)
+    delete_parser.add_argument(
+        "-a",
+        "--attachment",
+        action="append",
+        type=str,
+        default=[],
+        help="Attachment in KEY=VALUE format (repeatable)",
+    )
     delete_parser.set_defaults(func=delete)
 
     # Common parser for all subcommands
@@ -507,6 +641,21 @@ def main():
     put_parser.add_argument("-k", "--key", type=str, default=None)
     put_parser.add_argument("-v", "--value", type=str, default=None)
     put_parser.add_argument("--line", type=str, default=None)
+    put_parser.add_argument(
+        "-a",
+        "--attachment",
+        action="append",
+        type=str,
+        default=[],
+        help="Attachment in KEY=VALUE format (repeatable)",
+    )
+    put_parser.add_argument(
+        "--attachment-from-line",
+        action="append",
+        type=str,
+        default=[],
+        help="Extract named capture from --line pattern as attachment (repeatable)",
+    )
     put_parser.set_defaults(func=put)
 
     # Subscribe subcommand
@@ -514,14 +663,32 @@ def main():
     subscribe_parser.add_argument(
         "-k", "--key", type=str, action="append", required=True
     )
-    subscribe_parser.add_argument("--line", type=str, default="{value}")
+    subscribe_parser.add_argument(
+        "--line",
+        type=str,
+        default="{value}",
+        help="Output format. Supports {key}, {value}, {attachment}, {attachment:KEY}",
+    )
     subscribe_parser.set_defaults(func=subscribe)
 
     # Get subcommand
     get_parser = subparsers.add_parser("get", parents=[common_parser])
     get_parser.add_argument("-s", "--selector", type=str, required=True)
     get_parser.add_argument("-v", "--value", type=str, default=None)
-    get_parser.add_argument("--line", type=str, default="{value}")
+    get_parser.add_argument(
+        "--line",
+        type=str,
+        default="{value}",
+        help="Output format. Supports {key}, {value}, {attachment}, {attachment:KEY}",
+    )
+    get_parser.add_argument(
+        "-a",
+        "--attachment",
+        action="append",
+        type=str,
+        default=[],
+        help="Attachment in KEY=VALUE format (repeatable)",
+    )
     get_parser.set_defaults(func=get)
 
     # Parse arguments and start doing our thing

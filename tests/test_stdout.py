@@ -13,9 +13,10 @@ class MockPayload:
 
 
 class MockSample:
-    def __init__(self, key_expr, payload):
+    def __init__(self, key_expr, payload, attachment=None):
         self.key_expr = key_expr
         self.payload = MockPayload(payload)
+        self.attachment = attachment
 
 
 def test_print_sample_to_stdout_text_decoder(monkeypatch):
