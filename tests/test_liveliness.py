@@ -37,7 +37,9 @@ def test_put_with_explicit_liveliness_key(mock_zenoh_session):
     zenoh_cli.put(mock_zenoh_session, None, None, args)
 
     # Verify liveliness token was declared
-    mock_zenoh_session.liveliness().declare_token.assert_called_once_with("liveliness/key")
+    mock_zenoh_session.liveliness().declare_token.assert_called_once_with(
+        "liveliness/key"
+    )
 
     # Verify put was called
     mock_zenoh_session.put.assert_called_once()
@@ -126,7 +128,9 @@ def test_subscribe_with_explicit_liveliness_key(mock_zenoh_session):
             zenoh_cli.subscribe(mock_zenoh_session, None, None, args)
 
     # Verify liveliness token was declared
-    mock_zenoh_session.liveliness().declare_token.assert_called_once_with("liveliness/key")
+    mock_zenoh_session.liveliness().declare_token.assert_called_once_with(
+        "liveliness/key"
+    )
 
     # Verify subscriber was created
     mock_zenoh_session.declare_subscriber.assert_called_once()
@@ -444,7 +448,9 @@ def test_put_with_liveliness_and_stdin(mock_zenoh_session):
         zenoh_cli.put(mock_zenoh_session, None, None, args)
 
     # Verify liveliness token was declared
-    mock_zenoh_session.liveliness().declare_token.assert_called_once_with("producer/token")
+    mock_zenoh_session.liveliness().declare_token.assert_called_once_with(
+        "producer/token"
+    )
 
     # Verify put was called twice
     assert mock_zenoh_session.put.call_count == 2

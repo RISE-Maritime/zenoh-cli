@@ -201,6 +201,7 @@ def subscribe(
         token = session.liveliness().declare_token(liveliness_key)
 
     try:
+
         def listener(sample: zenoh.Sample):
             """Print received samples to stdout according to specified format"""
             _print_sample_to_stdout(sample, args.line, args.decoder)
@@ -685,7 +686,10 @@ def main():
         "-t", "--timeout", type=float, default=10.0, help="Query timeout in seconds"
     )
     liveliness_get_parser.add_argument(
-        "--line", type=str, default=None, help="Custom output format with {key} and {status}"
+        "--line",
+        type=str,
+        default=None,
+        help="Custom output format with {key} and {status}",
     )
     liveliness_get_parser.add_argument(
         "--json", action="store_true", help="Output in JSON format"
@@ -698,7 +702,10 @@ def main():
     )
     liveliness_sub_parser.add_argument("-k", "--key", type=str, required=True)
     liveliness_sub_parser.add_argument(
-        "--line", type=str, default=None, help="Custom output format with {key} and {status}"
+        "--line",
+        type=str,
+        default=None,
+        help="Custom output format with {key} and {status}",
     )
     liveliness_sub_parser.add_argument(
         "--json", action="store_true", help="Output in JSON format"
