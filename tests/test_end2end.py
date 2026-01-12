@@ -50,7 +50,11 @@ def run_zenoh_cli(command, port=None, listen=False, capture=True):
     else:
         # For long-running processes like subscribe
         return subprocess.Popen(
-            full_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            full_command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
 
 
@@ -487,6 +491,24 @@ def test_put_with_liveliness(zenoh_port):
     # Give put a moment to start and declare token
     # Increased sleep time to ensure session is fully established
     time.sleep(2)
+
+    # Send a value to stdin to ensure put process is fully running
+    try:
+        put_process.stdin.write("test_value\n")
+        put_process.stdin.flush()
+    except Exception as e:
+        print(f"Failed to write to put stdin: {e}")
+
+    # Give a moment for the put to process the input
+    time.sleep(0.5)
+
+    # Check if put process is still running
+    put_poll = put_process.poll()
+    print(f"Put process poll result: {put_poll}")
+    if put_poll is not None:
+        print(f"Put process exited unexpectedly with code: {put_poll}")
+        stderr_output = put_process.stderr.read() if put_process.stderr else ""
+        print(f"Put stderr: {stderr_output}")
 
     try:
         # Query alive tokens to verify our liveliness token is present (connecting to put's port)
