@@ -181,42 +181,17 @@ def subscribe(
     parser: argparse.ArgumentParser,
     args: argparse.Namespace,
 ):
-    # Liveliness validation
-    if args.liveliness is True:
-        # Bare --liveliness flag
-        if len(args.key) > 1:
-            parser.error(
-                "Cannot infer liveliness key with multiple subscriptions: use --liveliness KEY"
-            )
-        liveliness_key = args.key[0]
-    elif args.liveliness is not None:
-        # Explicit liveliness key
-        liveliness_key = args.liveliness
-    else:
-        liveliness_key = None
+    def listener(sample: zenoh.Sample):
+        """Print received samples to stdout according to specified format"""
+        _print_sample_to_stdout(sample, args.line, args.decoder)
 
-    # Declare liveliness token if requested
-    token = None
-    if liveliness_key:
-        token = session.liveliness().declare_token(liveliness_key)
+    subscribers = [session.declare_subscriber(key, listener) for key in args.key]
 
-    try:
-
-        def listener(sample: zenoh.Sample):
-            """Print received samples to stdout according to specified format"""
-            _print_sample_to_stdout(sample, args.line, args.decoder)
-
-        subscribers = [session.declare_subscriber(key, listener) for key in args.key]
-
-        while True:
-            try:
-                time.sleep(0.1)
-            except KeyboardInterrupt:
-                sys.exit(0)
-    finally:
-        # Undeclare liveliness token on exit
-        if token:
-            token.undeclare()
+    while True:
+        try:
+            time.sleep(0.1)
+        except KeyboardInterrupt:
+            sys.exit(0)
 
 
 def network(
@@ -371,20 +346,14 @@ def network(
     print(f"Network visualization saved to {os.path.abspath(output_file)}")
 
 
-def _print_liveliness_to_stdout(key: str, status: str, fmt: str, json_output: bool):
-    """Print liveliness token status to stdout according to specified format"""
-    if json_output:
-        output = {
-            "key": str(key),
-            "status": status,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-        sys.stdout.write(json.dumps(output))
-    elif fmt:
-        sys.stdout.write(fmt.format(key=key, status=status).rstrip())
-    else:
-        sys.stdout.write(f"[{status}] {key}")
-
+def _print_liveliness_to_stdout(key: str, status: str):
+    """Print liveliness token status to stdout in JSON format"""
+    output = {
+        "key": str(key),
+        "status": status,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    sys.stdout.write(json.dumps(output))
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -401,9 +370,7 @@ def liveliness_get(
         if response.ok:
             # For liveliness get, all responses are ALIVE
             status = "ALIVE" if response.ok.kind == zenoh.SampleKind.PUT else "DROPPED"
-            _print_liveliness_to_stdout(
-                str(response.ok.key_expr), status, args.line, args.json
-            )
+            _print_liveliness_to_stdout(str(response.ok.key_expr), status)
         else:
             logger.error(
                 "Received error on liveliness get(%s): %s",
@@ -419,9 +386,9 @@ def liveliness_sub(
     args: argparse.Namespace,
 ):
     def listener(sample: zenoh.Sample):
-        """Print liveliness changes to stdout according to specified format"""
+        """Print liveliness changes to stdout in JSON format"""
         status = "ALIVE" if sample.kind == zenoh.SampleKind.PUT else "DROPPED"
-        _print_liveliness_to_stdout(str(sample.key_expr), status, args.line, args.json)
+        _print_liveliness_to_stdout(str(sample.key_expr), status)
 
     subscriber = session.liveliness().declare_subscriber(
         args.key, listener, history=args.history
@@ -656,14 +623,6 @@ def main():
         "-k", "--key", type=str, action="append", required=True
     )
     subscribe_parser.add_argument("--line", type=str, default="{value}")
-    subscribe_parser.add_argument(
-        "--liveliness",
-        nargs="?",
-        const=True,
-        default=None,
-        metavar="KEY",
-        help="Declare liveliness token while subscribing (default: same as -k)",
-    )
     subscribe_parser.set_defaults(func=subscribe)
 
     # Get subcommand
@@ -685,15 +644,6 @@ def main():
     liveliness_get_parser.add_argument(
         "-t", "--timeout", type=float, default=10.0, help="Query timeout in seconds"
     )
-    liveliness_get_parser.add_argument(
-        "--line",
-        type=str,
-        default=None,
-        help="Custom output format with {key} and {status}",
-    )
-    liveliness_get_parser.add_argument(
-        "--json", action="store_true", help="Output in JSON format"
-    )
     liveliness_get_parser.set_defaults(func=liveliness_get)
 
     # Liveliness sub subcommand
@@ -701,15 +651,6 @@ def main():
         "sub", help="Subscribe to liveliness changes (continuous)"
     )
     liveliness_sub_parser.add_argument("-k", "--key", type=str, required=True)
-    liveliness_sub_parser.add_argument(
-        "--line",
-        type=str,
-        default=None,
-        help="Custom output format with {key} and {status}",
-    )
-    liveliness_sub_parser.add_argument(
-        "--json", action="store_true", help="Output in JSON format"
-    )
     liveliness_sub_parser.add_argument(
         "--history",
         action="store_true",

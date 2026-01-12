@@ -111,148 +111,11 @@ def test_put_without_liveliness(mock_zenoh_session):
     mock_zenoh_session.put.assert_called_once()
 
 
-def test_subscribe_with_explicit_liveliness_key(mock_zenoh_session):
-    """Test subscribe command with explicit liveliness key."""
-    args = MagicMock()
-    args.key = ["test/key"]
-    args.line = "{value}"
-    args.liveliness = "liveliness/key"
-    args.decoder = "text"
-
-    mock_token = MagicMock()
-    mock_zenoh_session.liveliness().declare_token.return_value = mock_token
-
-    # Simulate KeyboardInterrupt to exit the while loop
-    with pytest.raises(SystemExit):
-        with patch("time.sleep", side_effect=KeyboardInterrupt):
-            zenoh_cli.subscribe(mock_zenoh_session, None, None, args)
-
-    # Verify liveliness token was declared
-    mock_zenoh_session.liveliness().declare_token.assert_called_once_with(
-        "liveliness/key"
-    )
-
-    # Verify subscriber was created
-    mock_zenoh_session.declare_subscriber.assert_called_once()
-
-    # Verify token was undeclared
-    mock_token.undeclare.assert_called_once()
-
-
-def test_subscribe_with_bare_liveliness_single_key(mock_zenoh_session):
-    """Test subscribe command with bare --liveliness and single key."""
-    args = MagicMock()
-    args.key = ["test/key"]
-    args.line = "{value}"
-    args.liveliness = True
-    args.decoder = "text"
-
-    mock_token = MagicMock()
-    mock_zenoh_session.liveliness().declare_token.return_value = mock_token
-
-    # Simulate KeyboardInterrupt to exit the while loop
-    with pytest.raises(SystemExit):
-        with patch("time.sleep", side_effect=KeyboardInterrupt):
-            zenoh_cli.subscribe(mock_zenoh_session, None, None, args)
-
-    # Verify liveliness token was declared with the same key
-    mock_zenoh_session.liveliness().declare_token.assert_called_once_with("test/key")
-
-    # Verify token was undeclared
-    mock_token.undeclare.assert_called_once()
-
-
-def test_subscribe_with_bare_liveliness_multiple_keys_error():
-    """Test subscribe command with bare --liveliness and multiple keys raises error."""
-    mock_parser = MagicMock()
-    # Make parser.error raise SystemExit like the real implementation
-    mock_parser.error.side_effect = SystemExit(2)
-
-    args = MagicMock()
-    args.key = ["test/key1", "test/key2"]
-    args.line = "{value}"
-    args.liveliness = True
-    args.decoder = "text"
-
-    with pytest.raises(SystemExit):
-        zenoh_cli.subscribe(None, None, mock_parser, args)
-
-    # Verify parser.error was called
-    mock_parser.error.assert_called_once()
-    assert "Cannot infer liveliness key" in str(mock_parser.error.call_args)
-
-
-def test_subscribe_without_liveliness(mock_zenoh_session):
-    """Test subscribe command without liveliness flag."""
-    args = MagicMock()
-    args.key = ["test/key"]
-    args.line = "{value}"
-    args.liveliness = None
-    args.decoder = "text"
-
-    # Simulate KeyboardInterrupt to exit the while loop
-    with pytest.raises(SystemExit):
-        with patch("time.sleep", side_effect=KeyboardInterrupt):
-            zenoh_cli.subscribe(mock_zenoh_session, None, None, args)
-
-    # Verify liveliness token was NOT declared
-    mock_zenoh_session.liveliness().declare_token.assert_not_called()
-
-    # Verify subscriber was still created
-    mock_zenoh_session.declare_subscriber.assert_called_once()
-
-
-def test_liveliness_get_default_format(mock_zenoh_session, capsys):
-    """Test liveliness get command with default format."""
+def test_liveliness_get_json_output(mock_zenoh_session, capsys):
+    """Test liveliness get command outputs JSON format."""
     args = MagicMock()
     args.key = "test/**"
     args.timeout = 10.0
-    args.line = None
-    args.json = False
-
-    # Mock liveliness get response
-    mock_response = MagicMock()
-    mock_response.ok = MagicMock()
-    mock_response.ok.key_expr = "test/key1"
-    mock_response.ok.kind = zenoh.SampleKind.PUT
-    mock_zenoh_session.liveliness().get.return_value = [mock_response]
-
-    zenoh_cli.liveliness_get(mock_zenoh_session, None, None, args)
-
-    # Capture output
-    captured = capsys.readouterr()
-    assert "[ALIVE] test/key1" in captured.out
-
-
-def test_liveliness_get_custom_format(mock_zenoh_session, capsys):
-    """Test liveliness get command with custom format."""
-    args = MagicMock()
-    args.key = "test/**"
-    args.timeout = 10.0
-    args.line = "Key: {key}, Status: {status}"
-    args.json = False
-
-    # Mock liveliness get response
-    mock_response = MagicMock()
-    mock_response.ok = MagicMock()
-    mock_response.ok.key_expr = "test/key1"
-    mock_response.ok.kind = zenoh.SampleKind.PUT
-    mock_zenoh_session.liveliness().get.return_value = [mock_response]
-
-    zenoh_cli.liveliness_get(mock_zenoh_session, None, None, args)
-
-    # Capture output
-    captured = capsys.readouterr()
-    assert "Key: test/key1, Status: ALIVE" in captured.out
-
-
-def test_liveliness_get_json_format(mock_zenoh_session, capsys):
-    """Test liveliness get command with JSON format."""
-    args = MagicMock()
-    args.key = "test/**"
-    args.timeout = 10.0
-    args.line = None
-    args.json = True
 
     # Mock liveliness get response
     mock_response = MagicMock()
@@ -270,15 +133,13 @@ def test_liveliness_get_json_format(mock_zenoh_session, capsys):
     output = json.loads(captured.out)
     assert output["key"] == "test/key1"
     assert output["status"] == "ALIVE"
-    assert "timestamp" in output
+    assert output["timestamp"] == "2024-01-01T12:00:00Z"
 
 
 def test_liveliness_sub_with_history(mock_zenoh_session):
     """Test liveliness subscribe command with history flag."""
     args = MagicMock()
     args.key = "test/**"
-    args.line = None
-    args.json = False
     args.history = True
 
     # Simulate KeyboardInterrupt to exit the while loop
@@ -296,8 +157,6 @@ def test_liveliness_sub_without_history(mock_zenoh_session):
     """Test liveliness subscribe command without history flag."""
     args = MagicMock()
     args.key = "test/**"
-    args.line = None
-    args.json = False
     args.history = False
 
     # Simulate KeyboardInterrupt to exit the while loop
@@ -312,11 +171,9 @@ def test_liveliness_sub_without_history(mock_zenoh_session):
 
 
 def test_liveliness_sub_alive_status(mock_zenoh_session, capsys):
-    """Test liveliness subscribe callback with ALIVE status."""
+    """Test liveliness subscribe callback outputs JSON with ALIVE status."""
     args = MagicMock()
     args.key = "test/**"
-    args.line = None
-    args.json = False
     args.history = False
 
     # Capture the listener callback
@@ -338,19 +195,23 @@ def test_liveliness_sub_alive_status(mock_zenoh_session, capsys):
     mock_sample = MagicMock()
     mock_sample.key_expr = "test/key1"
     mock_sample.kind = zenoh.SampleKind.PUT
-    listener_callback(mock_sample)
+
+    with patch("zenoh_cli.datetime") as mock_datetime:
+        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        listener_callback(mock_sample)
 
     # Capture output
     captured = capsys.readouterr()
-    assert "[ALIVE] test/key1" in captured.out
+    output = json.loads(captured.out)
+    assert output["key"] == "test/key1"
+    assert output["status"] == "ALIVE"
+    assert output["timestamp"] == "2024-01-01T12:00:00Z"
 
 
 def test_liveliness_sub_dropped_status(mock_zenoh_session, capsys):
-    """Test liveliness subscribe callback with DROPPED status."""
+    """Test liveliness subscribe callback outputs JSON with DROPPED status."""
     args = MagicMock()
     args.key = "test/**"
-    args.line = None
-    args.json = False
     args.history = False
 
     # Capture the listener callback
@@ -372,11 +233,17 @@ def test_liveliness_sub_dropped_status(mock_zenoh_session, capsys):
     mock_sample = MagicMock()
     mock_sample.key_expr = "test/key1"
     mock_sample.kind = zenoh.SampleKind.DELETE
-    listener_callback(mock_sample)
+
+    with patch("zenoh_cli.datetime") as mock_datetime:
+        mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
+        listener_callback(mock_sample)
 
     # Capture output
     captured = capsys.readouterr()
-    assert "[DROPPED] test/key1" in captured.out
+    output = json.loads(captured.out)
+    assert output["key"] == "test/key1"
+    assert output["status"] == "DROPPED"
+    assert output["timestamp"] == "2024-01-01T12:00:00Z"
 
 
 def test_liveliness_token_command(mock_zenoh_session):
@@ -399,29 +266,11 @@ def test_liveliness_token_command(mock_zenoh_session):
     mock_token.undeclare.assert_called_once()
 
 
-def test_print_liveliness_to_stdout_default_format(capsys):
-    """Test _print_liveliness_to_stdout with default format."""
-    zenoh_cli._print_liveliness_to_stdout("test/key", "ALIVE", None, False)
-
-    captured = capsys.readouterr()
-    assert "[ALIVE] test/key" in captured.out
-
-
-def test_print_liveliness_to_stdout_custom_format(capsys):
-    """Test _print_liveliness_to_stdout with custom format."""
-    zenoh_cli._print_liveliness_to_stdout(
-        "test/key", "ALIVE", "Status: {status}, Key: {key}", False
-    )
-
-    captured = capsys.readouterr()
-    assert "Status: ALIVE, Key: test/key" in captured.out
-
-
 def test_print_liveliness_to_stdout_json_format(capsys):
-    """Test _print_liveliness_to_stdout with JSON format."""
+    """Test _print_liveliness_to_stdout outputs JSON format."""
     with patch("zenoh_cli.datetime") as mock_datetime:
         mock_datetime.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
-        zenoh_cli._print_liveliness_to_stdout("test/key", "ALIVE", None, True)
+        zenoh_cli._print_liveliness_to_stdout("test/key", "ALIVE")
 
     captured = capsys.readouterr()
     output = json.loads(captured.out)
