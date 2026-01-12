@@ -6,28 +6,55 @@ import queue
 import os
 import signal
 import base64
+import socket
 
 
-def run_zenoh_cli(command, capture=True):
+@pytest.fixture
+def zenoh_port():
+    """Allocate an available port for the test"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def zenoh_cli_base():
+    """Return base command with multicast scouting disabled"""
+    return ["python", "-m", "zenoh_cli", "--cfg", "scouting/multicast/enabled:false"]
+
+
+def run_zenoh_cli(command, port=None, listen=False, capture=True):
     """
     Helper function to run Zenoh CLI commands
 
     Args:
         command (list): List of command arguments to pass to the CLI
+        port (int): Optional port for TCP connectivity
+        listen (bool): If True, add --listen flag; if False, add --connect flag
         capture (bool): Whether to capture output
 
     Returns:
         subprocess.Popen or subprocess.CompletedProcess
     """
-    base_command = ["python", "-m", "zenoh_cli"]
-    full_command = base_command + command
+    full_command = zenoh_cli_base()
+
+    if port is not None:
+        if listen:
+            full_command += ["--listen", f"tcp/127.0.0.1:{port}"]
+        else:
+            full_command += ["--connect", f"tcp/127.0.0.1:{port}"]
+
+    full_command += command
 
     if capture:
         return subprocess.run(full_command, capture_output=True, text=True, timeout=10)
     else:
         # For long-running processes like subscribe
         return subprocess.Popen(
-            full_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            full_command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
 
 
@@ -79,7 +106,7 @@ def test_scout_command():
     # So we'll just check it runs without error
 
 
-def test_subscribe_and_put():
+def test_subscribe_and_put(zenoh_port):
     """
     End-to-end test for subscribe and put commands
 
@@ -98,8 +125,10 @@ def test_subscribe_and_put():
     # Encode value to base64 (default decoder)
     base64_value = base64.b64encode(test_value.encode()).decode()
 
-    # Start subscriber process with default base64 decoder
-    subscriber_process = run_zenoh_cli(["subscribe", "-k", test_key], capture=False)
+    # Start subscriber process with default base64 decoder (listening on port)
+    subscriber_process = run_zenoh_cli(
+        ["subscribe", "-k", test_key], port=zenoh_port, listen=True, capture=False
+    )
 
     # Start output capture thread
     subscriber_thread = threading.Thread(
@@ -111,8 +140,10 @@ def test_subscribe_and_put():
     time.sleep(1)
 
     try:
-        # Put a value (implicitly base64 encoded)
-        put_result = run_zenoh_cli(["put", "-k", test_key, "-v", test_value])
+        # Put a value (connecting to subscriber's port)
+        put_result = run_zenoh_cli(
+            ["put", "-k", test_key, "-v", test_value], port=zenoh_port, listen=False
+        )
 
         # Wait for potential network propagation
         time.sleep(1)
@@ -132,12 +163,13 @@ def test_subscribe_and_put():
 
     finally:
         # Cleanup: terminate subscriber process
+        subscriber_process.stdin.close()
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
 
 
-def test_subscribe_with_base64_decoding():
+def test_subscribe_with_base64_decoding(zenoh_port):
     """
     Test subscribing with explicit base64 decoding
 
@@ -154,9 +186,12 @@ def test_subscribe_with_base64_decoding():
     # Encode value to base64
     base64_value = base64.b64encode(test_value.encode()).decode()
 
-    # Start subscriber process with explicit base64 decoder
+    # Start subscriber process with explicit base64 decoder (listening on port)
     subscriber_process = run_zenoh_cli(
-        ["subscribe", "-k", test_key, "--decoder", "base64"], capture=False
+        ["subscribe", "-k", test_key, "--decoder", "base64"],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
     )
 
     # Start output capture thread
@@ -169,8 +204,10 @@ def test_subscribe_with_base64_decoding():
     time.sleep(1)
 
     try:
-        # Put base64 encoded value
-        put_result = run_zenoh_cli(["put", "-k", test_key, "-v", test_value])
+        # Put base64 encoded value (connecting to subscriber's port)
+        put_result = run_zenoh_cli(
+            ["put", "-k", test_key, "-v", test_value], port=zenoh_port, listen=False
+        )
 
         # Wait for potential network propagation
         time.sleep(1)
@@ -190,12 +227,13 @@ def test_subscribe_with_base64_decoding():
 
     finally:
         # Cleanup: terminate subscriber process
+        subscriber_process.stdin.close()
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
 
 
-def test_subscribe_multiple_puts():
+def test_subscribe_multiple_puts(zenoh_port):
     """
     Test subscribing to multiple puts with base64 encoding
 
@@ -214,8 +252,10 @@ def test_subscribe_multiple_puts():
     # Encode values to base64
     base64_values = [base64.b64encode(v.encode()).decode() for v in test_values]
 
-    # Start subscriber process
-    subscriber_process = run_zenoh_cli(["subscribe", "-k", test_key], capture=False)
+    # Start subscriber process (listening on port)
+    subscriber_process = run_zenoh_cli(
+        ["subscribe", "-k", test_key], port=zenoh_port, listen=True, capture=False
+    )
 
     # Start output capture thread
     subscriber_thread = threading.Thread(
@@ -227,9 +267,11 @@ def test_subscribe_multiple_puts():
     time.sleep(1)
 
     try:
-        # Put multiple values
+        # Put multiple values (connecting to subscriber's port)
         for value in test_values:
-            put_result = run_zenoh_cli(["put", "-k", test_key, "-v", value])
+            put_result = run_zenoh_cli(
+                ["put", "-k", test_key, "-v", value], port=zenoh_port, listen=False
+            )
             assert put_result.returncode == 0, f"Put command failed for {value}"
             time.sleep(0.5)  # Small delay between puts
 
@@ -250,6 +292,351 @@ def test_subscribe_multiple_puts():
 
     finally:
         # Cleanup: terminate subscriber process
+        subscriber_process.stdin.close()
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
+
+
+def test_liveliness_token_and_get(zenoh_port):
+    """
+    End-to-end test for liveliness token and get commands
+
+    Verifies:
+    - Can declare a liveliness token
+    - Can query alive tokens with liveliness get
+    - Token appears in results as ALIVE
+    """
+    import json
+
+    # Key to use for this test
+    test_key = "test/liveliness/token1"
+
+    # Start liveliness token process (listening on port)
+    token_process = run_zenoh_cli(
+        ["liveliness", "token", "-k", test_key],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
+    )
+
+    # Give token a moment to be declared and session to establish
+    time.sleep(2)
+
+    try:
+        # Query alive tokens (connecting to token's port)
+        get_result = run_zenoh_cli(
+            ["liveliness", "get", "-k", "test/liveliness/**"],
+            port=zenoh_port,
+            listen=False,
+        )
+
+        # Collect output from get command
+        output = get_result.stdout
+        output_lines = output.strip().split("\n")
+
+        # DEBUG: Print all output received
+        print(f"\n=== DEBUG: Liveliness get output ===")
+        print(f"Return code: {get_result.returncode}")
+        print(f"Stderr: {get_result.stderr}")
+        print(f"Total lines received: {len(output_lines)}")
+        print(f"Raw output:\n{output}")
+        print(f"Output lines: {output_lines}")
+
+        # Parse each line as JSON and collect results
+        results = []
+        for line in output_lines:
+            if line.strip():
+                try:
+                    result = json.loads(line)
+                    results.append(result)
+                    print(f"Parsed result: {result}")
+                except json.JSONDecodeError as e:
+                    print(f"Failed to parse line as JSON: {line}")
+                    print(f"Error: {e}")
+
+        print(f"Total parsed results: {len(results)}")
+        print(f"All keys in results: {[r.get('key') for r in results]}")
+        print(f"=== END DEBUG ===\n")
+
+        # Verify that our token is in the results
+        token_found = any(
+            result["key"] == test_key and result["status"] == "ALIVE"
+            for result in results
+        )
+
+        assert (
+            token_found
+        ), f"Liveliness token {test_key} not found in get results. Got {len(results)} results with keys: {[r.get('key') for r in results]}"
+
+    finally:
+        # Cleanup: terminate token process
+        token_process.stdin.close()
+        token_process.send_signal(signal.SIGINT)
+        token_process.wait(timeout=2)
+
+
+def test_liveliness_sub_alive_and_dropped(zenoh_port):
+    """
+    End-to-end test for liveliness subscribe command
+
+    Verifies:
+    - Can subscribe to liveliness changes
+    - Receives ALIVE when token is declared
+    - Receives DROPPED when token is undeclared
+    """
+    import json
+
+    # Setup output queue for liveliness subscriber
+    output_queue = queue.Queue()
+
+    # Key to use for this test
+    test_key = "test/liveliness/token2"
+
+    # Start liveliness subscriber process (listening on port)
+    sub_process = run_zenoh_cli(
+        ["liveliness", "sub", "-k", "test/liveliness/**"],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
+    )
+
+    # Start output capture thread
+    sub_thread = threading.Thread(
+        target=capture_subprocess_output, args=(sub_process, output_queue)
+    )
+    sub_thread.start()
+
+    # Give subscriber a moment to start and establish session
+    time.sleep(2)
+
+    try:
+        # Start a liveliness token (connecting to subscriber's port)
+        token_process = run_zenoh_cli(
+            ["liveliness", "token", "-k", test_key],
+            port=zenoh_port,
+            listen=False,
+            capture=False,
+        )
+
+        # Wait for token to be declared and propagated
+        time.sleep(2)
+
+        # Check for ALIVE message
+        try:
+            alive_msg = output_queue.get(timeout=3)
+            alive_data = json.loads(alive_msg)
+            assert (
+                alive_data["key"] == test_key
+            ), f"Expected key {test_key}, got {alive_data['key']}"
+            assert (
+                alive_data["status"] == "ALIVE"
+            ), f"Expected ALIVE status, got {alive_data['status']}"
+        except queue.Empty:
+            pytest.fail("Did not receive ALIVE message from liveliness subscriber")
+
+        # Stop the token to trigger DROPPED
+        token_process.stdin.close()
+        token_process.send_signal(signal.SIGINT)
+        token_process.wait(timeout=2)
+
+        # Wait a bit for the DROPPED message
+        time.sleep(1)
+
+        # Check for DROPPED message
+        try:
+            dropped_msg = output_queue.get(timeout=3)
+            dropped_data = json.loads(dropped_msg)
+            assert (
+                dropped_data["key"] == test_key
+            ), f"Expected key {test_key}, got {dropped_data['key']}"
+            assert (
+                dropped_data["status"] == "DROPPED"
+            ), f"Expected DROPPED status, got {dropped_data['status']}"
+        except queue.Empty:
+            pytest.fail("Did not receive DROPPED message from liveliness subscriber")
+
+    finally:
+        # Cleanup: terminate subscriber process
+        sub_process.stdin.close()
+        sub_process.send_signal(signal.SIGINT)
+        sub_thread.join(timeout=2)
+        sub_process.wait(timeout=2)
+
+
+def test_put_with_liveliness(zenoh_port):
+    """
+    End-to-end test for put command with liveliness token
+
+    Verifies:
+    - Can put a value with liveliness token
+    - Token is visible via liveliness get while put is active
+    """
+    import json
+
+    # Key to use for this test
+    data_key = "test/data/sensor1"
+    liveliness_key = "test/producer/sensor1"
+
+    # Start a put process with stdin that keeps the token alive (listening on port)
+    put_process = run_zenoh_cli(
+        [
+            "put",
+            "-k",
+            data_key,
+            "--line",
+            "{value}",
+            "--liveliness",
+            liveliness_key,
+        ],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
+    )
+
+    # Give put a moment to start and declare token
+    # Increased sleep time to ensure session is fully established
+    time.sleep(2)
+
+    # Send a value to stdin to ensure put process is fully running
+    try:
+        put_process.stdin.write("test_value\n")
+        put_process.stdin.flush()
+    except Exception as e:
+        print(f"Failed to write to put stdin: {e}")
+
+    # Give a moment for the put to process the input
+    time.sleep(0.5)
+
+    # Check if put process is still running
+    put_poll = put_process.poll()
+    print(f"Put process poll result: {put_poll}")
+    if put_poll is not None:
+        print(f"Put process exited unexpectedly with code: {put_poll}")
+        stderr_output = put_process.stderr.read() if put_process.stderr else ""
+        print(f"Put stderr: {stderr_output}")
+
+    try:
+        # Query alive tokens to verify our liveliness token is present (connecting to put's port)
+        get_result = run_zenoh_cli(
+            ["liveliness", "get", "-k", "test/producer/**"],
+            port=zenoh_port,
+            listen=False,
+        )
+
+        # Collect output from get command
+        output = get_result.stdout
+        output_lines = output.strip().split("\n")
+
+        # DEBUG: Print all output received
+        print(f"\n=== DEBUG: Liveliness get output for put test ===")
+        print(f"Return code: {get_result.returncode}")
+        print(f"Stderr: {get_result.stderr}")
+        print(f"Total lines received: {len(output_lines)}")
+        print(f"Raw output:\n{output}")
+        print(f"Output lines: {output_lines}")
+
+        # Parse each line as JSON and collect results
+        results = []
+        for line in output_lines:
+            if line.strip():
+                try:
+                    result = json.loads(line)
+                    results.append(result)
+                    print(f"Parsed result: {result}")
+                except json.JSONDecodeError as e:
+                    print(f"Failed to parse line as JSON: {line}")
+                    print(f"Error: {e}")
+
+        print(f"Total parsed results: {len(results)}")
+        print(f"All keys in results: {[r.get('key') for r in results]}")
+        print(f"=== END DEBUG ===\n")
+
+        # Verify that our token is in the results
+        token_found = any(
+            result["key"] == liveliness_key and result["status"] == "ALIVE"
+            for result in results
+        )
+
+        assert (
+            token_found
+        ), f"Liveliness token {liveliness_key} not found in get results. Got {len(results)} results with keys: {[r.get('key') for r in results]}"
+
+    finally:
+        # Cleanup: terminate put process
+        put_process.stdin.close()
+        put_process.send_signal(signal.SIGINT)
+        put_process.wait(timeout=2)
+
+
+def test_liveliness_sub_with_history(zenoh_port):
+    """
+    End-to-end test for liveliness subscribe with --history flag
+
+    Verifies:
+    - Can subscribe with --history flag
+    - Receives currently alive tokens immediately
+    """
+    import json
+
+    # Setup output queue for liveliness subscriber
+    output_queue = queue.Queue()
+
+    # Key to use for this test
+    test_key = "test/liveliness/token3"
+
+    # First, start a liveliness token before subscribing (listening on port)
+    token_process = run_zenoh_cli(
+        ["liveliness", "token", "-k", test_key],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
+    )
+
+    # Give token a moment to be declared and session to establish
+    time.sleep(2)
+
+    try:
+        # Now subscribe with --history to get the already-alive token (connecting to token's port)
+        sub_process = run_zenoh_cli(
+            ["liveliness", "sub", "-k", "test/liveliness/**", "--history"],
+            port=zenoh_port,
+            listen=False,
+            capture=False,
+        )
+
+        # Start output capture thread
+        sub_thread = threading.Thread(
+            target=capture_subprocess_output, args=(sub_process, output_queue)
+        )
+        sub_thread.start()
+
+        # Give subscriber a moment to start
+        time.sleep(1)
+
+        # Check for ALIVE message (from history)
+        try:
+            alive_msg = output_queue.get(timeout=3)
+            alive_data = json.loads(alive_msg)
+            assert (
+                alive_data["key"] == test_key
+            ), f"Expected key {test_key}, got {alive_data['key']}"
+            assert (
+                alive_data["status"] == "ALIVE"
+            ), f"Expected ALIVE status, got {alive_data['status']}"
+        except queue.Empty:
+            pytest.fail(
+                "Did not receive ALIVE message from liveliness subscriber with --history"
+            )
+
+        # Cleanup subscriber
+        sub_process.stdin.close()
+        sub_process.send_signal(signal.SIGINT)
+        sub_thread.join(timeout=2)
+        sub_process.wait(timeout=2)
+
+    finally:
+        # Cleanup: terminate token process
+        token_process.stdin.close()
+        token_process.send_signal(signal.SIGINT)
+        token_process.wait(timeout=2)

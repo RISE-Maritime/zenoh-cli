@@ -11,6 +11,7 @@ import warnings
 import argparse
 from base64 import b64decode, b64encode
 from typing import Dict, Callable
+from datetime import datetime
 import threading
 
 import zenoh
@@ -77,40 +78,64 @@ def put(
         if not args.key or not args.value:
             parser.error("A topic and a value must be specified on the command line.")
 
+    # Liveliness validation
+    if args.liveliness is True:
+        # Bare --liveliness flag
+        if not args.key:
+            parser.error(
+                "Cannot infer liveliness key: use --liveliness KEY or specify -k/--key"
+            )
+        liveliness_key = args.key
+    elif args.liveliness is not None:
+        # Explicit liveliness key
+        liveliness_key = args.liveliness
+    else:
+        liveliness_key = None
+
     encoder = ENCODERS[args.encoder]
 
-    if pattern := args.line:
-        line_parser = parse.compile(pattern)
+    # Declare liveliness token if requested
+    token = None
+    if liveliness_key:
+        token = session.liveliness().declare_token(liveliness_key)
 
-        for line in sys.stdin:
-            if result := line_parser.parse(line):
-                key = args.key or result["key"]
-                value = args.value or result["value"]
-                try:
-                    value = encoder(key, value)
-                except Exception:
-                    logger.exception("Encoder (%s) failed, skipping!", args.encoder)
-                    continue
+    try:
+        if pattern := args.line:
+            line_parser = parse.compile(pattern)
 
-                session.put(
-                    key_expr=key,
-                    payload=value,
-                    # encoding=args.encoding,
-                    # priority=args.priority,
-                    # congestion_control=args.congestion_control,
-                )
+            for line in sys.stdin:
+                if result := line_parser.parse(line):
+                    key = args.key or result["key"]
+                    value = args.value or result["value"]
+                    try:
+                        value = encoder(key, value)
+                    except Exception:
+                        logger.exception("Encoder (%s) failed, skipping!", args.encoder)
+                        continue
 
-            else:
-                logger.error("Failed to parse line: %s", line)
+                    session.put(
+                        key_expr=key,
+                        payload=value,
+                        # encoding=args.encoding,
+                        # priority=args.priority,
+                        # congestion_control=args.congestion_control,
+                    )
 
-    else:
-        session.put(
-            key_expr=args.key,
-            payload=encoder(args.key, args.value),
-            # encoding=args.encoding,
-            # priority=args.priority,
-            # congestion_control=args.congestion_control,
-        )
+                else:
+                    logger.error("Failed to parse line: %s", line)
+
+        else:
+            session.put(
+                key_expr=args.key,
+                payload=encoder(args.key, args.value),
+                # encoding=args.encoding,
+                # priority=args.priority,
+                # congestion_control=args.congestion_control,
+            )
+    finally:
+        # Undeclare liveliness token on exit/EOF/error
+        if token:
+            token.undeclare()
 
 
 def _print_sample_to_stdout(sample: zenoh.Sample, fmt: str, decoder: str):
@@ -321,6 +346,81 @@ def network(
     print(f"Network visualization saved to {os.path.abspath(output_file)}")
 
 
+def _print_liveliness_to_stdout(key: str, status: str):
+    """Print liveliness token status to stdout in JSON format"""
+    output = {
+        "key": str(key),
+        "status": status,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    sys.stdout.write(json.dumps(output))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def liveliness_get(
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+):
+    timeout = args.timeout if hasattr(args, "timeout") else 10.0
+
+    for response in session.liveliness().get(args.key, timeout=timeout):
+        if response.ok:
+            # For liveliness get, all responses are ALIVE
+            status = "ALIVE" if response.ok.kind == zenoh.SampleKind.PUT else "DROPPED"
+            _print_liveliness_to_stdout(str(response.ok.key_expr), status)
+        else:
+            logger.error(
+                "Received error on liveliness get(%s): %s",
+                args.key,
+                response.err.payload.to_bytes(),
+            )
+
+
+def liveliness_sub(
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+):
+    def listener(sample: zenoh.Sample):
+        """Print liveliness changes to stdout in JSON format"""
+        status = "ALIVE" if sample.kind == zenoh.SampleKind.PUT else "DROPPED"
+        _print_liveliness_to_stdout(str(sample.key_expr), status)
+
+    subscriber = session.liveliness().declare_subscriber(
+        args.key, listener, history=args.history
+    )
+
+    while True:
+        try:
+            time.sleep(0.1)
+        except KeyboardInterrupt:
+            sys.exit(0)
+
+
+def liveliness_token(
+    session: zenoh.Session,
+    config: zenoh.Config,
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+):
+    token = session.liveliness().declare_token(args.key)
+    logger.info("Declared liveliness token on: %s", args.key)
+
+    try:
+        while True:
+            try:
+                time.sleep(0.1)
+            except KeyboardInterrupt:
+                sys.exit(0)
+    finally:
+        token.undeclare()
+        logger.info("Undeclared liveliness token on: %s", args.key)
+
+
 # Bundled codecs
 
 
@@ -507,6 +607,14 @@ def main():
     put_parser.add_argument("-k", "--key", type=str, default=None)
     put_parser.add_argument("-v", "--value", type=str, default=None)
     put_parser.add_argument("--line", type=str, default=None)
+    put_parser.add_argument(
+        "--liveliness",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="KEY",
+        help="Declare liveliness token while putting (default: same as -k)",
+    )
     put_parser.set_defaults(func=put)
 
     # Subscribe subcommand
@@ -523,6 +631,39 @@ def main():
     get_parser.add_argument("-v", "--value", type=str, default=None)
     get_parser.add_argument("--line", type=str, default="{value}")
     get_parser.set_defaults(func=get)
+
+    # Liveliness subcommand group
+    liveliness_parser = subparsers.add_parser("liveliness")
+    liveliness_subparsers = liveliness_parser.add_subparsers(required=True)
+
+    # Liveliness get subcommand
+    liveliness_get_parser = liveliness_subparsers.add_parser(
+        "get", help="Query alive tokens (one-shot)"
+    )
+    liveliness_get_parser.add_argument("-k", "--key", type=str, required=True)
+    liveliness_get_parser.add_argument(
+        "-t", "--timeout", type=float, default=10.0, help="Query timeout in seconds"
+    )
+    liveliness_get_parser.set_defaults(func=liveliness_get)
+
+    # Liveliness sub subcommand
+    liveliness_sub_parser = liveliness_subparsers.add_parser(
+        "sub", help="Subscribe to liveliness changes (continuous)"
+    )
+    liveliness_sub_parser.add_argument("-k", "--key", type=str, required=True)
+    liveliness_sub_parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Receive currently alive tokens at subscription time",
+    )
+    liveliness_sub_parser.set_defaults(func=liveliness_sub)
+
+    # Liveliness token subcommand
+    liveliness_token_parser = liveliness_subparsers.add_parser(
+        "token", help="Declare standalone liveliness token (testing)"
+    )
+    liveliness_token_parser.add_argument("-k", "--key", type=str, required=True)
+    liveliness_token_parser.set_defaults(func=liveliness_token)
 
     # Parse arguments and start doing our thing
     args = parser.parse_args()
