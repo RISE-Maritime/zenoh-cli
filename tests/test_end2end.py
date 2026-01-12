@@ -253,3 +253,254 @@ def test_subscribe_multiple_puts():
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
+
+
+def test_liveliness_token_and_get():
+    """
+    End-to-end test for liveliness token and get commands
+
+    Verifies:
+    - Can declare a liveliness token
+    - Can query alive tokens with liveliness get
+    - Token appears in get results as ALIVE
+    """
+    import json
+
+    # Key to use for this test
+    test_key = "test/liveliness/token1"
+
+    # Start liveliness token process
+    token_process = run_zenoh_cli(
+        ["liveliness", "token", "-k", test_key], capture=False
+    )
+
+    # Give token a moment to be declared
+    time.sleep(1)
+
+    try:
+        # Query alive tokens
+        get_result = run_zenoh_cli(["liveliness", "get", "-k", "test/liveliness/**"])
+
+        # Check get was successful
+        assert get_result.returncode == 0, f"Get command failed: {get_result.stderr}"
+
+        # Parse JSON output
+        lines = get_result.stdout.strip().split("\n")
+        found_token = False
+        for line in lines:
+            if line:
+                data = json.loads(line)
+                if data["key"] == test_key and data["status"] == "ALIVE":
+                    found_token = True
+                    break
+
+        assert found_token, f"Token {test_key} not found in liveliness get results"
+
+    finally:
+        # Cleanup: terminate token process
+        token_process.send_signal(signal.SIGINT)
+        token_process.wait(timeout=2)
+
+
+def test_liveliness_sub_alive_and_dropped():
+    """
+    End-to-end test for liveliness subscribe command
+
+    Verifies:
+    - Can subscribe to liveliness changes
+    - Receives ALIVE when token is declared
+    - Receives DROPPED when token is undeclared
+    """
+    import json
+
+    # Setup output queue for liveliness subscriber
+    output_queue = queue.Queue()
+
+    # Key to use for this test
+    test_key = "test/liveliness/token2"
+
+    # Start liveliness subscriber process
+    sub_process = run_zenoh_cli(
+        ["liveliness", "sub", "-k", "test/liveliness/**"], capture=False
+    )
+
+    # Start output capture thread
+    sub_thread = threading.Thread(
+        target=capture_subprocess_output, args=(sub_process, output_queue)
+    )
+    sub_thread.start()
+
+    # Give subscriber a moment to start
+    time.sleep(1)
+
+    try:
+        # Start a liveliness token
+        token_process = run_zenoh_cli(
+            ["liveliness", "token", "-k", test_key], capture=False
+        )
+
+        # Wait for token to be declared
+        time.sleep(1)
+
+        # Check for ALIVE message
+        try:
+            alive_msg = output_queue.get(timeout=3)
+            alive_data = json.loads(alive_msg)
+            assert (
+                alive_data["key"] == test_key
+            ), f"Expected key {test_key}, got {alive_data['key']}"
+            assert (
+                alive_data["status"] == "ALIVE"
+            ), f"Expected ALIVE status, got {alive_data['status']}"
+        except queue.Empty:
+            pytest.fail("Did not receive ALIVE message from liveliness subscriber")
+
+        # Stop the token to trigger DROPPED
+        token_process.send_signal(signal.SIGINT)
+        token_process.wait(timeout=2)
+
+        # Wait a bit for the DROPPED message
+        time.sleep(1)
+
+        # Check for DROPPED message
+        try:
+            dropped_msg = output_queue.get(timeout=3)
+            dropped_data = json.loads(dropped_msg)
+            assert (
+                dropped_data["key"] == test_key
+            ), f"Expected key {test_key}, got {dropped_data['key']}"
+            assert (
+                dropped_data["status"] == "DROPPED"
+            ), f"Expected DROPPED status, got {dropped_data['status']}"
+        except queue.Empty:
+            pytest.fail("Did not receive DROPPED message from liveliness subscriber")
+
+    finally:
+        # Cleanup: terminate subscriber process
+        sub_process.send_signal(signal.SIGINT)
+        sub_thread.join(timeout=2)
+        sub_process.wait(timeout=2)
+
+
+def test_put_with_liveliness():
+    """
+    End-to-end test for put command with liveliness token
+
+    Verifies:
+    - Can put a value with liveliness token
+    - Token is visible via liveliness get while put is active
+    """
+    import json
+
+    # Key to use for this test
+    data_key = "test/data/sensor1"
+    liveliness_key = "test/producer/sensor1"
+
+    # Start a put process with stdin that keeps the token alive
+    put_process = run_zenoh_cli(
+        [
+            "put",
+            "-k",
+            data_key,
+            "--line",
+            "{value}",
+            "--liveliness",
+            liveliness_key,
+        ],
+        capture=False,
+    )
+
+    # Give put a moment to start and declare token
+    time.sleep(1)
+
+    try:
+        # Query alive tokens to verify our liveliness token is present
+        get_result = run_zenoh_cli(["liveliness", "get", "-k", "test/producer/**"])
+
+        # Check get was successful
+        assert get_result.returncode == 0, f"Get command failed: {get_result.stderr}"
+
+        # Parse JSON output to find our token
+        lines = get_result.stdout.strip().split("\n")
+        found_token = False
+        for line in lines:
+            if line:
+                data = json.loads(line)
+                if data["key"] == liveliness_key and data["status"] == "ALIVE":
+                    found_token = True
+                    break
+
+        assert (
+            found_token
+        ), f"Liveliness token {liveliness_key} not found in get results"
+
+    finally:
+        # Cleanup: terminate put process
+        put_process.send_signal(signal.SIGINT)
+        put_process.wait(timeout=2)
+
+
+def test_liveliness_sub_with_history():
+    """
+    End-to-end test for liveliness subscribe with --history flag
+
+    Verifies:
+    - Can subscribe with --history flag
+    - Receives currently alive tokens immediately
+    """
+    import json
+
+    # Setup output queue for liveliness subscriber
+    output_queue = queue.Queue()
+
+    # Key to use for this test
+    test_key = "test/liveliness/token3"
+
+    # First, start a liveliness token before subscribing
+    token_process = run_zenoh_cli(
+        ["liveliness", "token", "-k", test_key], capture=False
+    )
+
+    # Give token a moment to be declared
+    time.sleep(1)
+
+    try:
+        # Now subscribe with --history to get the already-alive token
+        sub_process = run_zenoh_cli(
+            ["liveliness", "sub", "-k", "test/liveliness/**", "--history"],
+            capture=False,
+        )
+
+        # Start output capture thread
+        sub_thread = threading.Thread(
+            target=capture_subprocess_output, args=(sub_process, output_queue)
+        )
+        sub_thread.start()
+
+        # Give subscriber a moment to start
+        time.sleep(1)
+
+        # Check for ALIVE message (from history)
+        try:
+            alive_msg = output_queue.get(timeout=3)
+            alive_data = json.loads(alive_msg)
+            assert (
+                alive_data["key"] == test_key
+            ), f"Expected key {test_key}, got {alive_data['key']}"
+            assert (
+                alive_data["status"] == "ALIVE"
+            ), f"Expected ALIVE status, got {alive_data['status']}"
+        except queue.Empty:
+            pytest.fail(
+                "Did not receive ALIVE message from liveliness subscriber with --history"
+            )
+
+        # Cleanup subscriber
+        sub_process.send_signal(signal.SIGINT)
+        sub_thread.join(timeout=2)
+        sub_process.wait(timeout=2)
+
+    finally:
+        # Cleanup: terminate token process
+        token_process.send_signal(signal.SIGINT)
+        token_process.wait(timeout=2)
