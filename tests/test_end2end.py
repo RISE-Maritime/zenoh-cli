@@ -6,21 +6,44 @@ import queue
 import os
 import signal
 import base64
+import socket
 
 
-def run_zenoh_cli(command, capture=True):
+@pytest.fixture
+def zenoh_port():
+    """Allocate an available port for the test"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def zenoh_cli_base():
+    """Return base command with multicast scouting disabled"""
+    return ["python", "-m", "zenoh_cli", "--cfg", "scouting/multicast/enabled:false"]
+
+
+def run_zenoh_cli(command, port=None, listen=False, capture=True):
     """
     Helper function to run Zenoh CLI commands
 
     Args:
         command (list): List of command arguments to pass to the CLI
+        port (int): Optional port for TCP connectivity
+        listen (bool): If True, add --listen flag; if False, add --connect flag
         capture (bool): Whether to capture output
 
     Returns:
         subprocess.Popen or subprocess.CompletedProcess
     """
-    base_command = ["python", "-m", "zenoh_cli"]
-    full_command = base_command + command
+    full_command = zenoh_cli_base()
+
+    if port is not None:
+        if listen:
+            full_command += ["--listen", f"tcp/127.0.0.1:{port}"]
+        else:
+            full_command += ["--connect", f"tcp/127.0.0.1:{port}"]
+
+    full_command += command
 
     if capture:
         return subprocess.run(full_command, capture_output=True, text=True, timeout=10)
@@ -79,7 +102,7 @@ def test_scout_command():
     # So we'll just check it runs without error
 
 
-def test_subscribe_and_put():
+def test_subscribe_and_put(zenoh_port):
     """
     End-to-end test for subscribe and put commands
 
@@ -98,8 +121,10 @@ def test_subscribe_and_put():
     # Encode value to base64 (default decoder)
     base64_value = base64.b64encode(test_value.encode()).decode()
 
-    # Start subscriber process with default base64 decoder
-    subscriber_process = run_zenoh_cli(["subscribe", "-k", test_key], capture=False)
+    # Start subscriber process with default base64 decoder (listening on port)
+    subscriber_process = run_zenoh_cli(
+        ["subscribe", "-k", test_key], port=zenoh_port, listen=True, capture=False
+    )
 
     # Start output capture thread
     subscriber_thread = threading.Thread(
@@ -111,8 +136,10 @@ def test_subscribe_and_put():
     time.sleep(1)
 
     try:
-        # Put a value (implicitly base64 encoded)
-        put_result = run_zenoh_cli(["put", "-k", test_key, "-v", test_value])
+        # Put a value (connecting to subscriber's port)
+        put_result = run_zenoh_cli(
+            ["put", "-k", test_key, "-v", test_value], port=zenoh_port, listen=False
+        )
 
         # Wait for potential network propagation
         time.sleep(1)
@@ -137,7 +164,7 @@ def test_subscribe_and_put():
         subscriber_process.wait(timeout=2)
 
 
-def test_subscribe_with_base64_decoding():
+def test_subscribe_with_base64_decoding(zenoh_port):
     """
     Test subscribing with explicit base64 decoding
 
@@ -154,9 +181,12 @@ def test_subscribe_with_base64_decoding():
     # Encode value to base64
     base64_value = base64.b64encode(test_value.encode()).decode()
 
-    # Start subscriber process with explicit base64 decoder
+    # Start subscriber process with explicit base64 decoder (listening on port)
     subscriber_process = run_zenoh_cli(
-        ["subscribe", "-k", test_key, "--decoder", "base64"], capture=False
+        ["subscribe", "-k", test_key, "--decoder", "base64"],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
     )
 
     # Start output capture thread
@@ -169,8 +199,10 @@ def test_subscribe_with_base64_decoding():
     time.sleep(1)
 
     try:
-        # Put base64 encoded value
-        put_result = run_zenoh_cli(["put", "-k", test_key, "-v", test_value])
+        # Put base64 encoded value (connecting to subscriber's port)
+        put_result = run_zenoh_cli(
+            ["put", "-k", test_key, "-v", test_value], port=zenoh_port, listen=False
+        )
 
         # Wait for potential network propagation
         time.sleep(1)
@@ -195,7 +227,7 @@ def test_subscribe_with_base64_decoding():
         subscriber_process.wait(timeout=2)
 
 
-def test_subscribe_multiple_puts():
+def test_subscribe_multiple_puts(zenoh_port):
     """
     Test subscribing to multiple puts with base64 encoding
 
@@ -214,8 +246,10 @@ def test_subscribe_multiple_puts():
     # Encode values to base64
     base64_values = [base64.b64encode(v.encode()).decode() for v in test_values]
 
-    # Start subscriber process
-    subscriber_process = run_zenoh_cli(["subscribe", "-k", test_key], capture=False)
+    # Start subscriber process (listening on port)
+    subscriber_process = run_zenoh_cli(
+        ["subscribe", "-k", test_key], port=zenoh_port, listen=True, capture=False
+    )
 
     # Start output capture thread
     subscriber_thread = threading.Thread(
@@ -227,9 +261,11 @@ def test_subscribe_multiple_puts():
     time.sleep(1)
 
     try:
-        # Put multiple values
+        # Put multiple values (connecting to subscriber's port)
         for value in test_values:
-            put_result = run_zenoh_cli(["put", "-k", test_key, "-v", value])
+            put_result = run_zenoh_cli(
+                ["put", "-k", test_key, "-v", value], port=zenoh_port, listen=False
+            )
             assert put_result.returncode == 0, f"Put command failed for {value}"
             time.sleep(0.5)  # Small delay between puts
 
@@ -255,7 +291,7 @@ def test_subscribe_multiple_puts():
         subscriber_process.wait(timeout=2)
 
 
-def test_liveliness_token_and_get():
+def test_liveliness_token_and_get(zenoh_port):
     """
     End-to-end test for liveliness token and get commands
 
@@ -269,17 +305,24 @@ def test_liveliness_token_and_get():
     # Key to use for this test
     test_key = "test/liveliness/token1"
 
-    # Start liveliness token process
+    # Start liveliness token process (listening on port)
     token_process = run_zenoh_cli(
-        ["liveliness", "token", "-k", test_key], capture=False
+        ["liveliness", "token", "-k", test_key],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
     )
 
     # Give token a moment to be declared
     time.sleep(1)
 
     try:
-        # Query alive tokens
-        get_result = run_zenoh_cli(["liveliness", "get", "-k", "test/liveliness/**"])
+        # Query alive tokens (connecting to token's port)
+        get_result = run_zenoh_cli(
+            ["liveliness", "get", "-k", "test/liveliness/**"],
+            port=zenoh_port,
+            listen=False,
+        )
 
         # Check get was successful
         assert get_result.returncode == 0, f"Get command failed: {get_result.stderr}"
@@ -302,7 +345,7 @@ def test_liveliness_token_and_get():
         token_process.wait(timeout=2)
 
 
-def test_liveliness_sub_alive_and_dropped():
+def test_liveliness_sub_alive_and_dropped(zenoh_port):
     """
     End-to-end test for liveliness subscribe command
 
@@ -319,9 +362,12 @@ def test_liveliness_sub_alive_and_dropped():
     # Key to use for this test
     test_key = "test/liveliness/token2"
 
-    # Start liveliness subscriber process
+    # Start liveliness subscriber process (listening on port)
     sub_process = run_zenoh_cli(
-        ["liveliness", "sub", "-k", "test/liveliness/**"], capture=False
+        ["liveliness", "sub", "-k", "test/liveliness/**"],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
     )
 
     # Start output capture thread
@@ -334,9 +380,12 @@ def test_liveliness_sub_alive_and_dropped():
     time.sleep(1)
 
     try:
-        # Start a liveliness token
+        # Start a liveliness token (connecting to subscriber's port)
         token_process = run_zenoh_cli(
-            ["liveliness", "token", "-k", test_key], capture=False
+            ["liveliness", "token", "-k", test_key],
+            port=zenoh_port,
+            listen=False,
+            capture=False,
         )
 
         # Wait for token to be declared
@@ -382,7 +431,7 @@ def test_liveliness_sub_alive_and_dropped():
         sub_process.wait(timeout=2)
 
 
-def test_put_with_liveliness():
+def test_put_with_liveliness(zenoh_port):
     """
     End-to-end test for put command with liveliness token
 
@@ -396,7 +445,7 @@ def test_put_with_liveliness():
     data_key = "test/data/sensor1"
     liveliness_key = "test/producer/sensor1"
 
-    # Start a put process with stdin that keeps the token alive
+    # Start a put process with stdin that keeps the token alive (listening on port)
     put_process = run_zenoh_cli(
         [
             "put",
@@ -407,6 +456,8 @@ def test_put_with_liveliness():
             "--liveliness",
             liveliness_key,
         ],
+        port=zenoh_port,
+        listen=True,
         capture=False,
     )
 
@@ -414,8 +465,12 @@ def test_put_with_liveliness():
     time.sleep(1)
 
     try:
-        # Query alive tokens to verify our liveliness token is present
-        get_result = run_zenoh_cli(["liveliness", "get", "-k", "test/producer/**"])
+        # Query alive tokens to verify our liveliness token is present (connecting to put's port)
+        get_result = run_zenoh_cli(
+            ["liveliness", "get", "-k", "test/producer/**"],
+            port=zenoh_port,
+            listen=False,
+        )
 
         # Check get was successful
         assert get_result.returncode == 0, f"Get command failed: {get_result.stderr}"
@@ -440,7 +495,7 @@ def test_put_with_liveliness():
         put_process.wait(timeout=2)
 
 
-def test_liveliness_sub_with_history():
+def test_liveliness_sub_with_history(zenoh_port):
     """
     End-to-end test for liveliness subscribe with --history flag
 
@@ -456,18 +511,23 @@ def test_liveliness_sub_with_history():
     # Key to use for this test
     test_key = "test/liveliness/token3"
 
-    # First, start a liveliness token before subscribing
+    # First, start a liveliness token before subscribing (listening on port)
     token_process = run_zenoh_cli(
-        ["liveliness", "token", "-k", test_key], capture=False
+        ["liveliness", "token", "-k", test_key],
+        port=zenoh_port,
+        listen=True,
+        capture=False,
     )
 
     # Give token a moment to be declared
     time.sleep(1)
 
     try:
-        # Now subscribe with --history to get the already-alive token
+        # Now subscribe with --history to get the already-alive token (connecting to token's port)
         sub_process = run_zenoh_cli(
             ["liveliness", "sub", "-k", "test/liveliness/**", "--history"],
+            port=zenoh_port,
+            listen=False,
             capture=False,
         )
 
