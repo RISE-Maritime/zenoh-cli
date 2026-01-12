@@ -163,6 +163,7 @@ def test_subscribe_and_put(zenoh_port):
 
     finally:
         # Cleanup: terminate subscriber process
+        subscriber_process.stdin.close()
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
@@ -226,6 +227,7 @@ def test_subscribe_with_base64_decoding(zenoh_port):
 
     finally:
         # Cleanup: terminate subscriber process
+        subscriber_process.stdin.close()
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
@@ -290,6 +292,7 @@ def test_subscribe_multiple_puts(zenoh_port):
 
     finally:
         # Cleanup: terminate subscriber process
+        subscriber_process.stdin.close()
         subscriber_process.send_signal(signal.SIGINT)
         subscriber_thread.join(timeout=2)
         subscriber_process.wait(timeout=2)
@@ -368,6 +371,7 @@ def test_liveliness_token_and_get(zenoh_port):
 
     finally:
         # Cleanup: terminate token process
+        token_process.stdin.close()
         token_process.send_signal(signal.SIGINT)
         token_process.wait(timeout=2)
 
@@ -432,6 +436,7 @@ def test_liveliness_sub_alive_and_dropped(zenoh_port):
             pytest.fail("Did not receive ALIVE message from liveliness subscriber")
 
         # Stop the token to trigger DROPPED
+        token_process.stdin.close()
         token_process.send_signal(signal.SIGINT)
         token_process.wait(timeout=2)
 
@@ -453,6 +458,7 @@ def test_liveliness_sub_alive_and_dropped(zenoh_port):
 
     finally:
         # Cleanup: terminate subscriber process
+        sub_process.stdin.close()
         sub_process.send_signal(signal.SIGINT)
         sub_thread.join(timeout=2)
         sub_process.wait(timeout=2)
@@ -558,6 +564,7 @@ def test_put_with_liveliness(zenoh_port):
 
     finally:
         # Cleanup: terminate put process
+        put_process.stdin.close()
         put_process.send_signal(signal.SIGINT)
         put_process.wait(timeout=2)
 
@@ -623,11 +630,13 @@ def test_liveliness_sub_with_history(zenoh_port):
             )
 
         # Cleanup subscriber
+        sub_process.stdin.close()
         sub_process.send_signal(signal.SIGINT)
         sub_thread.join(timeout=2)
         sub_process.wait(timeout=2)
 
     finally:
         # Cleanup: terminate token process
+        token_process.stdin.close()
         token_process.send_signal(signal.SIGINT)
         token_process.wait(timeout=2)
