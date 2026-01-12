@@ -318,18 +318,20 @@ def test_liveliness_token_and_get(zenoh_port):
 
     try:
         # Query alive tokens (connecting to token's port)
-        get_process = run_zenoh_cli(
+        get_result = run_zenoh_cli(
             ["liveliness", "get", "-k", "test/liveliness/**"],
             port=zenoh_port,
             listen=False,
         )
 
         # Collect output from get command
-        output, _ = get_process.communicate(timeout=5)
-        output_lines = output.decode("utf-8").strip().split("\n")
+        output = get_result.stdout
+        output_lines = output.strip().split("\n")
 
         # DEBUG: Print all output received
         print(f"\n=== DEBUG: Liveliness get output ===")
+        print(f"Return code: {get_result.returncode}")
+        print(f"Stderr: {get_result.stderr}")
         print(f"Total lines received: {len(output_lines)}")
         print(f"Raw output:\n{output}")
         print(f"Output lines: {output_lines}")
@@ -488,18 +490,20 @@ def test_put_with_liveliness(zenoh_port):
 
     try:
         # Query alive tokens to verify our liveliness token is present (connecting to put's port)
-        get_process = run_zenoh_cli(
+        get_result = run_zenoh_cli(
             ["liveliness", "get", "-k", "test/producer/**"],
             port=zenoh_port,
             listen=False,
         )
 
         # Collect output from get command
-        output, _ = get_process.communicate(timeout=5)
-        output_lines = output.decode("utf-8").strip().split("\n")
+        output = get_result.stdout
+        output_lines = output.strip().split("\n")
 
         # DEBUG: Print all output received
         print(f"\n=== DEBUG: Liveliness get output for put test ===")
+        print(f"Return code: {get_result.returncode}")
+        print(f"Stderr: {get_result.stderr}")
         print(f"Total lines received: {len(output_lines)}")
         print(f"Raw output:\n{output}")
         print(f"Output lines: {output_lines}")
