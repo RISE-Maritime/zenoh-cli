@@ -313,8 +313,8 @@ def test_liveliness_token_and_get(zenoh_port):
         capture=False,
     )
 
-    # Give token a moment to be declared
-    time.sleep(1)
+    # Give token a moment to be declared and session to establish
+    time.sleep(2)
 
     try:
         # Query alive tokens (connecting to token's port)
@@ -376,8 +376,8 @@ def test_liveliness_sub_alive_and_dropped(zenoh_port):
     )
     sub_thread.start()
 
-    # Give subscriber a moment to start
-    time.sleep(1)
+    # Give subscriber a moment to start and establish session
+    time.sleep(2)
 
     try:
         # Start a liveliness token (connecting to subscriber's port)
@@ -388,8 +388,8 @@ def test_liveliness_sub_alive_and_dropped(zenoh_port):
             capture=False,
         )
 
-        # Wait for token to be declared
-        time.sleep(1)
+        # Wait for token to be declared and propagated
+        time.sleep(2)
 
         # Check for ALIVE message
         try:
@@ -462,7 +462,8 @@ def test_put_with_liveliness(zenoh_port):
     )
 
     # Give put a moment to start and declare token
-    time.sleep(1)
+    # Increased sleep time to ensure session is fully established
+    time.sleep(2)
 
     try:
         # Query alive tokens to verify our liveliness token is present (connecting to put's port)
@@ -519,8 +520,8 @@ def test_liveliness_sub_with_history(zenoh_port):
         capture=False,
     )
 
-    # Give token a moment to be declared
-    time.sleep(1)
+    # Give token a moment to be declared and session to establish
+    time.sleep(2)
 
     try:
         # Now subscribe with --history to get the already-alive token (connecting to token's port)
