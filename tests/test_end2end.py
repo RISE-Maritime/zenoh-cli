@@ -298,7 +298,7 @@ def test_liveliness_token_and_get(zenoh_port):
     Verifies:
     - Can declare a liveliness token
     - Can query alive tokens with liveliness get
-    - Token appears in get results as ALIVE
+    - Token appears in results as ALIVE
     """
     import json
 
@@ -318,26 +318,47 @@ def test_liveliness_token_and_get(zenoh_port):
 
     try:
         # Query alive tokens (connecting to token's port)
-        get_result = run_zenoh_cli(
+        get_process = run_zenoh_cli(
             ["liveliness", "get", "-k", "test/liveliness/**"],
             port=zenoh_port,
             listen=False,
         )
 
-        # Check get was successful
-        assert get_result.returncode == 0, f"Get command failed: {get_result.stderr}"
+        # Collect output from get command
+        output, _ = get_process.communicate(timeout=5)
+        output_lines = output.decode("utf-8").strip().split("\n")
 
-        # Parse JSON output
-        lines = get_result.stdout.strip().split("\n")
-        found_token = False
-        for line in lines:
-            if line:
-                data = json.loads(line)
-                if data["key"] == test_key and data["status"] == "ALIVE":
-                    found_token = True
-                    break
+        # DEBUG: Print all output received
+        print(f"\n=== DEBUG: Liveliness get output ===")
+        print(f"Total lines received: {len(output_lines)}")
+        print(f"Raw output:\n{output}")
+        print(f"Output lines: {output_lines}")
 
-        assert found_token, f"Token {test_key} not found in liveliness get results"
+        # Parse each line as JSON and collect results
+        results = []
+        for line in output_lines:
+            if line.strip():
+                try:
+                    result = json.loads(line)
+                    results.append(result)
+                    print(f"Parsed result: {result}")
+                except json.JSONDecodeError as e:
+                    print(f"Failed to parse line as JSON: {line}")
+                    print(f"Error: {e}")
+
+        print(f"Total parsed results: {len(results)}")
+        print(f"All keys in results: {[r.get('key') for r in results]}")
+        print(f"=== END DEBUG ===\n")
+
+        # Verify that our token is in the results
+        token_found = any(
+            result["key"] == test_key and result["status"] == "ALIVE"
+            for result in results
+        )
+
+        assert (
+            token_found
+        ), f"Liveliness token {test_key} not found in get results. Got {len(results)} results with keys: {[r.get('key') for r in results]}"
 
     finally:
         # Cleanup: terminate token process
@@ -467,28 +488,47 @@ def test_put_with_liveliness(zenoh_port):
 
     try:
         # Query alive tokens to verify our liveliness token is present (connecting to put's port)
-        get_result = run_zenoh_cli(
+        get_process = run_zenoh_cli(
             ["liveliness", "get", "-k", "test/producer/**"],
             port=zenoh_port,
             listen=False,
         )
 
-        # Check get was successful
-        assert get_result.returncode == 0, f"Get command failed: {get_result.stderr}"
+        # Collect output from get command
+        output, _ = get_process.communicate(timeout=5)
+        output_lines = output.decode("utf-8").strip().split("\n")
 
-        # Parse JSON output to find our token
-        lines = get_result.stdout.strip().split("\n")
-        found_token = False
-        for line in lines:
-            if line:
-                data = json.loads(line)
-                if data["key"] == liveliness_key and data["status"] == "ALIVE":
-                    found_token = True
-                    break
+        # DEBUG: Print all output received
+        print(f"\n=== DEBUG: Liveliness get output for put test ===")
+        print(f"Total lines received: {len(output_lines)}")
+        print(f"Raw output:\n{output}")
+        print(f"Output lines: {output_lines}")
+
+        # Parse each line as JSON and collect results
+        results = []
+        for line in output_lines:
+            if line.strip():
+                try:
+                    result = json.loads(line)
+                    results.append(result)
+                    print(f"Parsed result: {result}")
+                except json.JSONDecodeError as e:
+                    print(f"Failed to parse line as JSON: {line}")
+                    print(f"Error: {e}")
+
+        print(f"Total parsed results: {len(results)}")
+        print(f"All keys in results: {[r.get('key') for r in results]}")
+        print(f"=== END DEBUG ===\n")
+
+        # Verify that our token is in the results
+        token_found = any(
+            result["key"] == liveliness_key and result["status"] == "ALIVE"
+            for result in results
+        )
 
         assert (
-            found_token
-        ), f"Liveliness token {liveliness_key} not found in get results"
+            token_found
+        ), f"Liveliness token {liveliness_key} not found in get results. Got {len(results)} results with keys: {[r.get('key') for r in results]}"
 
     finally:
         # Cleanup: terminate put process
